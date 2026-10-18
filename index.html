@@ -70,7 +70,7 @@
 // [1 CONSTANTS]
 const S = 4, N = 11, W = 2 * N + 1, WH = 3.2, FH = 3.2;   // tile size, cells per side, grid size, wall height, floor-to-floor height
 const WALK = 3.6, RUN = 6.5;                                // player speeds
-const WANDER = 2.1, CHASE = 5.2;                            // ghost speeds
+const WANDER = 2.1, CHASE = 5.35;                            // ghost speeds
 const SIGHT = 15, FOV = 0.9, NEAR = 8;                      // ghost front sight range, half-angle, all-around detection range (not through walls)
 const BLACK = 5.5;                                          // black ghost chase speed (normal ghost chase = 5.2)
 const BLACK_RANGE = 48;                                     // distance (m) over which the black ghost's heartbeat / red edge fade in (normal ghosts: 16)
@@ -419,10 +419,30 @@ function buildKeyChair() {
 }
 // ----- cabinets -----
 const metal = new THREE.MeshLambertMaterial({ color: 0x4b5a52, emissive: 0x0a1210 }), metalDark = new THREE.MeshLambertMaterial({ color: 0x35423b });
-const scratchTex = canvasTex(128, 192, (g, w, h) => {              // claw marks left by the black ghost on a cabinet it remembers
-  g.lineCap = 'round';
-  for (const [x, d] of [[34, 0], [62, 10], [90, 4]]) { g.strokeStyle = 'rgba(70,6,6,.95)'; g.lineWidth = 6; g.beginPath(); g.moveTo(x, 14 + d); g.lineTo(x + 26, 172 - d); g.stroke(); g.strokeStyle = 'rgba(210,70,50,.55)'; g.lineWidth = 2; g.beginPath(); g.moveTo(x - 1, 16 + d); g.lineTo(x + 24, 168 - d); g.stroke(); }
-  g.strokeStyle = 'rgba(70,6,6,.8)'; g.lineWidth = 3; g.beginPath(); g.moveTo(20, 90); g.lineTo(100, 124); g.stroke();
+function clawPolys(w, h) {                 // four jagged, tapered gouges (deterministic): layered polygons, dark edge first, glowing core last
+  let sd = 20250611; const rand = () => { sd = (sd + 0x6D2B79F5) | 0; let t = Math.imul(sd ^ (sd >>> 15), 1 | sd); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const dl = Math.hypot(.32, 1), ux = .32 / dl, uy = 1 / dl, nx = -uy, ny = ux, out = [];
+  const colors = ['rgba(40,3,3,.96)', 'rgba(92,7,6,.96)', 'rgba(146,13,10,.96)', 'rgba(196,22,15,.96)', 'rgba(236,48,28,.95)', 'rgba(255,92,56,.92)'], scales = [1, .86, .7, .52, .34, .18];   // dark rim -> glowing core
+  [[.06, .05, 1.0, 1.0], [.24, .02, 1.06, 1.18], [.42, .09, 1.0, 1.08], [.6, .17, .8, .84]].forEach(([fx, fy, len, ws]) => {
+    const L = len * h * .84, x0 = fx * w, y0 = fy * h, W = w * .074 * ws, N = 34, bend = (rand() - .5) * 16, lj = [], rj = [], cx = [], cy = [], wd = [];
+    for (let k = 0; k <= N; k++) {
+      const t = k / N, base = Math.sin(Math.PI * t), c = bend * 4 * t * (1 - t);
+      cx.push(x0 + ux * L * t + nx * c); cy.push(y0 + uy * L * t + ny * c); wd.push(W * Math.pow(base, .72));
+      const edge = k === 0 || k === N, notch = () => (rand() < .14 ? .35 : 1 + (rand() - .5) * .8);   // ragged edge: random swell + occasional bite
+      lj.push(edge ? 1 : notch()); rj.push(edge ? 1 : notch());
+    }
+    const shape = sc => { const pts = []; for (let k = 0; k <= N; k++) pts.push([cx[k] + nx * wd[k] * .5 * lj[k] * sc, cy[k] + ny * wd[k] * .5 * lj[k] * sc]); for (let k = N; k >= 0; k--) pts.push([cx[k] - nx * wd[k] * .5 * rj[k] * sc, cy[k] - ny * wd[k] * .5 * rj[k] * sc]); return pts; };
+    scales.forEach((sc, i) => out.push({ c: colors[i], pts: shape(sc) }));
+    for (let n = 0; n < 4; n++) {            // small flicks of torn surface hugging the gouge
+      const k = 3 + (rand() * (N - 6) | 0), side = rand() < .5 ? 1 : -1, d = wd[k] * (.5 + rand() * .22), s0 = 1.4 + rand() * 2.6, px = cx[k] + nx * d * side, py = cy[k] + ny * d * side;
+      out.push({ c: colors[1], pts: [[px, py], [px + ux * s0 * 1.8 + nx * side * s0 * .5, py + uy * s0 * 1.8 + ny * side * s0 * .5], [px + nx * side * s0, py + ny * side * s0]] });
+    }
+  });
+  return out;
+}
+const scratchTex = canvasTex(256, 384, (g, w, h) => {              // claw marks left by the black ghost on a cabinet it remembers
+  g.lineJoin = 'round';
+  for (const l of clawPolys(w, h)) { g.fillStyle = l.c; g.beginPath(); l.pts.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.closePath(); g.fill(); }
 });
 const slitMat = new THREE.MeshBasicMaterial({ color: 0x050706 }), handleMat = new THREE.MeshLambertMaterial({ color: 0xa9b3ad });
 function addCabinet(L, c) {
@@ -434,7 +454,7 @@ function addCabinet(L, c) {
   cab.door = [add(new THREE.BoxGeometry(.9, 1.95, .04), metalDark, 0, 1.05, .41)];
   for (let i = 0; i < 6; i++) cab.door.push(add(new THREE.BoxGeometry(.62, .035, .02), slitMat, 0, 1.55 + i * .09, .435));
   cab.door.push(add(new THREE.BoxGeometry(.04, .22, .05), handleMat, .32, .95, .45));
-  cab.scratch = add(new THREE.PlaneGeometry(.7, 1.05), new THREE.MeshLambertMaterial({ map: scratchTex, transparent: true, depthWrite: false, emissive: 0x240404 }), 0, 1.1, .46); cab.scratch.visible = false;
+  cab.scratch = add(new THREE.PlaneGeometry(.8, 1.2), new THREE.MeshLambertMaterial({ map: scratchTex, transparent: true, depthWrite: false, emissive: 0x240404 }), 0, 1.1, .46); cab.scratch.visible = false;
   cabGroup.add(g); setFloor(g, L);
 }
 function buildCabs() {
