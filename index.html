@@ -1368,13 +1368,17 @@ addEventListener('keydown', e => { keys[e.code] = true; if (e.code === 'KeyE' &&
 addEventListener('keyup', e => { keys[e.code] = false; });
 addEventListener('mousedown', () => { drag = true; });
 addEventListener('mouseup', () => { drag = false; });
+let lockSkip = 0;                           // mouse events still to ignore right after the pointer lock is granted (the first ones can carry a stale jump)
+const MOUSE_SPIKE = 120;                    // px: a single mouse event can't honestly move further than this (~15 deg); bigger values are Chromium's spurious jumps
 addEventListener('mousemove', e => {
   const locked = document.pointerLockElement === cv;
   if (state !== 'play' || (!locked && !drag)) return;
-  if (Math.abs(e.movementX) > 250 || Math.abs(e.movementY) > 250) return;
-  P.yaw -= e.movementX * SENS; P.pitch = Math.max(-1.45, Math.min(1.45, P.pitch - e.movementY * SENS));
+  if (lockSkip > 0) { lockSkip--; return; }
+  const mx = e.movementX, my = e.movementY;
+  if (!(Math.abs(mx) <= MOUSE_SPIKE && Math.abs(my) <= MOUSE_SPIKE)) return;     // spike (or NaN): drop the event instead of turning the view
+  P.yaw -= mx * SENS; P.pitch = Math.max(-1.45, Math.min(1.45, P.pitch - my * SENS));
 });
-cv.addEventListener('click', () => { if (state === 'play' && document.pointerLockElement !== cv) cv.requestPointerLock(); });
+cv.addEventListener('click', () => { if (state === 'play' && document.pointerLockElement !== cv) { const p = cv.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } });   // fallback: click the screen to grab the mouse again
 
 
 // ================= [2 PLAYER] saved records, difficulty, goals =================
@@ -1410,7 +1414,36 @@ function showOv(cls, title, sub, btn) {
   ov.className = cls; T.textContent = title; Sx.innerHTML = sub; B.textContent = btn; renderMenu(cls !== '');
   [hud, recE, promptE, slats, floorE, potionE, miniE, alertE, omenE, cueE, keyE, msgE].forEach(e => e.classList.add('hide')); ov.classList.remove('hide');
 }
-function lock() { cv.requestPointerLock(); }
+// Pointer lock. Right after the player leaves it with Esc, browsers REFUSE a new request for a moment (even from a click), so Resume used to leave the
+// game running with no mouse look. Now the game waits in state 'lock' (frozen, overlay hidden), retries until the lock is granted, and only then continues.
+let rawMouse = true, lockTimer = 0, lockDeadline = 0;
+const LOCK_RETRY_MS = 200, LOCK_GIVEUP_MS = 3000;               // retry every 0.2 s, at most 3 s in total (inside the click's 5 s user activation)
+function lock() {
+  clearTimeout(lockTimer); lockTimer = 0; clearTimeout(lockDeadline);
+  lockDeadline = setTimeout(() => { if (state === 'lock') { startPlay(); showHint('CLICK THE SCREEN TO LOOK AROUND'); } }, LOCK_GIVEUP_MS);   // watchdog: a request that never answers must not freeze the game
+  tryLock();
+}
+function tryLock() {
+  if (state !== 'lock' || document.pointerLockElement === cv) return;
+  try {
+    const p = cv.requestPointerLock(rawMouse ? { unadjustedMovement: true } : undefined);   // raw mouse input: no OS acceleration / smoothing (fewer jumps)
+    if (p && p.catch) p.catch(lockFailed);
+  } catch (err) { lockFailed(err); }
+}
+function lockFailed(err) {                  // called by both the promise rejection and the 'pointerlockerror' event
+  if (state !== 'lock') return;
+  if (err && err.name === 'NotSupportedError' && rawMouse) { rawMouse = false; clearTimeout(lockTimer); lockTimer = 0; tryLock(); return; }   // raw input unavailable: plain lock
+  if (lockTimer) return;                    // a retry is already scheduled
+  lockTimer = setTimeout(() => { lockTimer = 0; tryLock(); }, LOCK_RETRY_MS);   // (the watchdog above ends the retrying: play on, a click on the screen then grabs the mouse)
+}
+function startPlay() {                      // the mouse is ours (or we gave up waiting): the clock and the game continue
+  clearTimeout(lockTimer); lockTimer = 0; clearTimeout(lockDeadline);
+  if (state !== 'lock') return;
+  t0 += performance.now() - pausedAt;       // time spent paused / waiting does not count toward the timer / record
+  state = 'play';
+}
+function showHint(s) { msgE.textContent = s; msgE.classList.remove('hide'); msgT = 3; }
+document.addEventListener('pointerlockerror', () => lockFailed());
 function reset() {
   runDiff = saved.difficulty; applyDifficulty(runDiff);
   let guard = 0; while (!pickStairs() && guard++ < 20);
@@ -1426,22 +1459,26 @@ function reset() {
 }
 function begin() {
   clearKeys();                             // never start a run with a stale pressed key
-  if (state !== 'pause') reset(); else t0 += performance.now() - pausedAt;      // paused time does not count toward the timer / record
-  initAudio(); state = 'play'; ov.classList.add('hide'); hud.classList.remove('hide'); recE.classList.remove('hide'); floorE.classList.remove('hide'); miniE.classList.remove('hide'); keyE.classList.toggle('hide', !hasKey);
+  if (state !== 'pause') { reset(); pausedAt = performance.now(); }             // a new run waits for the mouse lock the same way a resume does (startPlay() starts the clock)
+  initAudio(); state = 'lock'; ov.classList.add('hide'); hud.classList.remove('hide'); recE.classList.remove('hide'); floorE.classList.remove('hide'); miniE.classList.remove('hide'); keyE.classList.toggle('hide', !hasKey);
   if (P.hidden) slats.classList.remove('hide'); lock();
 }
 B.addEventListener('click', begin);
 addEventListener('keydown', e => { if (e.code === 'KeyR' && (state === 'over' || state === 'win')) begin(); });
 function clearKeys() { for (const k in keys) keys[k] = false; drag = false; }           // forget every held key / mouse button
 function pauseGame() {
-  if (state !== 'play') return;
-  state = 'pause'; pausedAt = performance.now(); clearKeys();
+  if (state !== 'play' && state !== 'lock') return;
+  if (state === 'play') pausedAt = performance.now();      // (still waiting for the lock: the clock already stopped at pausedAt)
+  state = 'pause'; clearTimeout(lockTimer); lockTimer = 0; clearTimeout(lockDeadline); clearKeys();
   if (AC) { humG.gain.value = 0; crackG.gain.value = 0; droneG.gain.value = 0; }
   if (document.pointerLockElement) document.exitPointerLock();
   showOv('', 'PAUSED', 'Click to resume.', 'RESUME');
 }
 function onFocusLoss() { clearKeys(); pauseGame(); }        // alt-tab, clicking another window, hidden tab: no stuck movement / run, and the game pauses
-document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement) onFocusLoss(); });
+document.addEventListener('pointerlockchange', () => {
+  if (document.pointerLockElement === cv) { lockSkip = 3; startPlay(); }     // granted: skip the first few (possibly stale) mouse events, then go
+  else onFocusLoss();                                                         // lost (Esc, alt-tab): pause
+});
 addEventListener('blur', onFocusLoss);
 document.addEventListener('visibilitychange', () => { if (document.hidden) onFocusLoss(); });
 
