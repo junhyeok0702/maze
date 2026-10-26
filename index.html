@@ -1473,12 +1473,30 @@ function follow(g, tn, sp, dt) {            // path along the maze (across floor
   return nkey(gn) === nkey(tn);
 }
 const nodeAt = (x, z, L) => { const c = cellOf(x, z); return { L, x: c.x, z: c.z }; };
-function sees(g) {                          // front cone within SIGHT, or anywhere within NEAR; walls block, cabinets hide, other floors invisible
-  if (P.hidden || time < GRACE || g.L !== P.level) return false;
-  const dx = P.x - g.x, dz = P.z - g.z, d = Math.hypot(dx, dz);
-  if (d > SIGHT || !los(g.x, g.z, P.x, P.z, g.L)) return false;
+function sees(g) {                          // front cone within SIGHT (horizontal FOV, full 180-degree vertical), or anywhere within NEAR; 3D: walls / floor slab / stairs block, cabinets hide
+  if (P.hidden || time < GRACE) return false;
+  const gy = heightAt(g.x, g.z, g.L) + SEE_EYE, py = P.y + SEE_EYE;      // eye heights: works up / down the stairwell, across floors
+  const dx = P.x - g.x, dz = P.z - g.z, dh = Math.hypot(dx, dz), d = Math.hypot(dh, py - gy);
+  if (d > SIGHT || !los3(g.x, gy, g.z, P.x, py, P.z)) return false;
   if (d < NEAR) return true;
-  return (dx * Math.sin(g.yaw) + dz * Math.cos(g.yaw)) / d > Math.cos(FOV);
+  if (dh < .3) return true;                                                // straight above / below: inside the 180-degree vertical field
+  return (dx * Math.sin(g.yaw) + dz * Math.cos(g.yaw)) / dh > Math.cos(FOV); // horizontal cone only -> vertical field is the full front 180 degrees (up & down)
+}
+const SEE_EYE = 1.5;                         // ghost / player eye height above the floor (m) for sight checks
+const isRampCell = (gx, gz) => stairs.some(s => (s.r1.x === gx && s.r1.z === gz) || (s.r2.x === gx && s.r2.z === gz));
+function los3(ax, ay, az, bx, by, bz) {      // 3D line of sight through both floors: walls, the 2F floor slab and the underside of the stairs block
+  const n = Math.ceil(Math.hypot(bx - ax, by - ay, bz - az) / .25);
+  let prevL = ay >= FH ? 1 : 0;
+  for (let i = 1; i < n; i++) {
+    const k = i / n, x = ax + (bx - ax) * k, y = ay + (by - ay) * k, z = az + (bz - az) * k;
+    const gx = Math.floor(x / S), gz = Math.floor(z / S);
+    if (gx < 0 || gz < 0 || gx >= W || gz >= W || y < 0 || y > FH + WH) return false;
+    const L = y >= FH ? 1 : 0;
+    if (isRampCell(gx, gz)) { if (y < heightAt(x, z, 0) + .05) return false; }   // open stairwell (no slab), but not through the steps
+    else if (L !== prevL || grids[L][gz][gx]) return false;                       // crossed the floor slab, or hit a wall
+    prevL = L;
+  }
+  return true;
 }
 function pickGoal(g) {
   const o = ghosts.find(h => h !== g), gc = cellOf(g.x, g.z);
