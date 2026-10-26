@@ -78,7 +78,7 @@
 const S = 4, N = 11, W = 2 * N + 1, WH = 3.2, FH = 3.2;   // tile size, cells per side, grid size, wall height, floor-to-floor height
 const WALK = 3.6, RUN = 6.5;                                // player speeds
 const FOV = 0.9;                                            // ghost sight half-angle (rad)
-const BASE = { WANDER: 2.1, CHASE: 5.2, SIGHT: 15, NEAR: 8, BLACK: 5.5 };   // normal-difficulty ghost tuning: wander / chase speed, front sight range, all-around detection range (not through walls), black ghost chase speed
+const BASE = { WANDER: 2.1, CHASE: 5.2, SIGHT: 20, NEAR: 8, BLACK: 5.5 };   // normal-difficulty ghost tuning: wander / chase speed, front sight range, all-around detection range (not through walls), black ghost chase speed
 let WANDER = BASE.WANDER, CHASE = BASE.CHASE, SIGHT = BASE.SIGHT, NEAR = BASE.NEAR, BLACK = BASE.BLACK;   // active values, set from the chosen difficulty at the start of every run
 const DIFFS = {                                             // difficulty: ghost speed / sight / black-ghost speed multipliers
   easy: { label: 'EASY', desc: 'EASY - slower ghosts, shorter sight', spd: .9, sight: .85, black: .92 },
@@ -1321,7 +1321,7 @@ function makeGhost(dark = false) {
   setActorLayer(mesh, 0);
   scene.add(mesh);
   const shadow = new THREE.Mesh(shadowGeo, new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false, opacity: .8, polygonOffset: true, polygonOffsetFactor: -2 })); shadow.scale.set(2.9, 1, 2.9); shadow.renderOrder = 1; scene.add(shadow);   // contact blob on the floor
-  return { mesh, head, wisps, sleeves, sheetMat, eyeMat, eyeGlow, eyes, lights, shadow, fl: -1, glow, xray, xrMats, marker, hunt: null, x: 0, z: 0, L: 0, yaw: 0, state: 'wander', goal: null, pause: 0, lost: 0, last: null, path: 0, next: null, wt: 0, wp: null, base: 0, ws: 0, cab: null };
+  return { mesh, head, wisps, sleeves, sheetMat, eyeMat, eyeGlow, eyes, lights, shadow, fl: -1, glow, xray, xrMats, marker, hunt: null, x: 0, z: 0, L: 0, yaw: 0, state: 'wander', goal: null, pause: 0, lost: 0, last: null, path: 0, next: null, wt: 0, wp: null, base: 0, ws: 0, cab: null, v: 0, mt: -9, pc: '', ph: Math.random() * 6.28 };
 }
 const ghosts = [makeGhost(), makeGhost()];
 const blackG = makeGhost(true); blackG.state = 'chase'; blackG.wt = WAIT;
@@ -1402,7 +1402,7 @@ function reset() {
   P.by = P.yaw; P.pyaw = P.yaw; P.ppitch = 0; body.visible = rig.visible = true; slats.classList.add('hide');
   const f0 = allCells.filter(c => c.L === 0 && c.x + c.z - 2 >= 14), a = f0[Math.random() * f0.length | 0];
   const l1 = allCells.filter(c => c.L === 1), b = l1[Math.random() * l1.length | 0];
-  [a, b].forEach((c, i) => { const q = center(c); Object.assign(ghosts[i], { x: q.x, z: q.z, L: c.L, yaw: Math.random() * 6.28, state: 'wander', goal: null, pause: 1.5 + i * 1.5, lost: 0, last: null, path: 0, next: null, base: 0, ws: 0, wt: 0, cab: null }); setLook(ghosts[i]); });
+  [a, b].forEach((c, i) => { const q = center(c); Object.assign(ghosts[i], { x: q.x, z: q.z, L: c.L, yaw: Math.random() * 6.28, state: 'wander', goal: null, pause: 1.5 + i * 1.5, lost: 0, last: null, path: 0, next: null, base: 0, ws: 0, wt: 0, cab: null, v: 0, mt: -9, pc: '' }); setLook(ghosts[i]); });
   blackOn = false; showBlack(false); blackG.wt = WAIT; blackG.next = null; blackG.hunt = null; anomalyT = 0; omenT = 0; deathT = -1; deathBy = null; shakeX = shakeY = shakeZ = deathRoll = 0; blackLvl = 0; warnB = prevWarn = -1; cueT = glitchT = 0; alertE.classList.add('hide'); omenE.classList.add('hide'); cueE.classList.add('hide'); bodyFloor = -1; hasKey = false; msgT = 0; keyE.classList.add('hide'); msgE.classList.add('hide');
   t0 = performance.now(); time = 0; heartT = 0; heartLvl = 0; vision = 0; target = null;
 }
@@ -1460,15 +1460,22 @@ function hideInCabinet(c) {
 
 // ================= [4 GHOST AI] ghost AI =================
 function turn(g, a, dt, rate = 7) { g.yaw += Math.atan2(Math.sin(a - g.yaw), Math.cos(a - g.yaw)) * Math.min(1, rate * dt); }
-function moveGhost(g, tx, tz, sp, dt) {
+function moveGhost(g, tx, tz, sp, dt) {      // eases speed in / out, slows down to turn, and wanders at an uneven pace
   const dx = tx - g.x, dz = tz - g.z, d = Math.hypot(dx, dz); if (d < .02) return;
-  const k = Math.min(d, sp * dt) / d; g.x += dx * k; g.z += dz * k; turn(g, Math.atan2(dx, dz), dt, sp > 3 ? 10 : 5);
+  const fast = sp > 3, ta = Math.atan2(dx, dz);
+  if (time - g.mt > .15) g.v = 0;                                                     // was standing still: start from rest
+  g.mt = time;
+  const face = Math.max(0, Math.cos(Math.atan2(Math.sin(ta - g.yaw), Math.cos(ta - g.yaw))));   // 1 = already facing the way it goes
+  const pace = fast ? 1 : 1 + .14 * Math.sin(time * .9 + g.ph) + .06 * Math.sin(time * 2.3 + g.ph * 3);   // wandering drifts between slow and less slow
+  const want = sp * pace * (fast ? .78 + .22 * face : .5 + .5 * face);              // sharp turn -> slow down, swing round, then speed up again
+  g.v += (want - g.v) * Math.min(1, (want > g.v ? (fast ? 4 : 2.2) : 6) * dt);       // accelerate gradually, brake quicker
+  const k = Math.min(d, g.v * dt) / d; g.x += dx * k; g.z += dz * k; turn(g, ta, dt, fast ? 9 : 4);
   const c = cellOf(g.x, g.z); g.L = nodeLevel(c.x, c.z, g.L);
 }
 function follow(g, tn, sp, dt) {            // path along the maze (across floors) to the target node; true when arrived
-  const c = cellOf(g.x, g.z), gn = { L: g.L, x: c.x, z: c.z };
-  if (g.next) { const q = center(g.next); if (Math.hypot(q.x - g.x, q.z - g.z) < .2) g.path = 0; }
-  g.path -= dt; if (g.path <= 0) { g.next = nkey(gn) === nkey(tn) ? null : nextNode(gn, tn); g.path = .25; }
+  const c = cellOf(g.x, g.z), gn = { L: g.L, x: c.x, z: c.z }, ck = nkey(gn);
+  if (ck !== g.pc) { g.pc = ck; g.path = 0; }   // entered a new cell: head straight for the following cell's centre, so corners are cut in a smooth curve instead of a right angle
+  g.path -= dt; if (g.path <= 0) { g.next = ck === nkey(tn) ? null : nextNode(gn, tn); g.path = .25; }
   if (g.next) { const q = center(g.next); moveGhost(g, q.x, q.z, sp, dt); }
   return nkey(gn) === nkey(tn);
 }
@@ -1546,7 +1553,7 @@ function farCell() {
 }
 function placeBlack(lv) {
   const f = farCell(), q = center(f);
-  Object.assign(blackG, { x: q.x, z: q.z, L: f.L, next: null, path: 0, wt: WAIT });
+  Object.assign(blackG, { x: q.x, z: q.z, L: f.L, next: null, path: 0, wt: WAIT, v: 0, mt: -9, pc: '' });
   sting(lv); if (lv === 1) { cueT = 1.8; glitchT = .45; cueE.classList.remove('hide'); }   // teleport sound == normal chase-start sound, so add a visual cue
 }
 function activateBlack() {                 // called when the key is taken; the flag makes a second activation impossible
@@ -1868,7 +1875,7 @@ function render(dt, now) {
   // ghosts
   allGhosts().forEach((g, k) => {
     const ch = g.state === 'chase', wt = g.state === 'wait';
-    g.mesh.position.set(g.x, heightAt(g.x, g.z, g.L) + .36 + Math.sin(now / 400 + k * 2) * .07, g.z); g.mesh.rotation.y = g.yaw;   // hovers a bit higher so the hem never dips into the floor
+    g.mesh.position.set(g.x, heightAt(g.x, g.z, g.L) + .36 + Math.sin(now / 400 + k * 2) * .07, g.z); g.mesh.rotation.order = 'YXZ'; g.mesh.rotation.y = g.yaw; g.lean = (g.lean || 0) + ((time - (g.mt ?? -9) < .15 ? (g.v || 0) * .022 : 0) - (g.lean || 0)) * Math.min(1, 5 * dt); g.mesh.rotation.x = g.lean;   // leans forward into its speed; hovers a bit higher so the hem never dips into the floor
     if (g.fl !== g.L) { setActorLayer(g.mesh, g.L); g.shadow.layers.set(FL(g.L)); g.fl = g.L; }   // the floor's lights already include GL(L); the x-ray twins stay on XL
     const li = (ch ? 4.2 : 2.2) + (Math.random() - .5) * (ch ? 1.2 : .6); g.lights[0].intensity = g.L === 0 ? li : 0; g.lights[1].intensity = g.L === 1 ? li : 0;   // light exists only on the ghost's own floor layer
     g.glow.scale.setScalar((ch ? 8 : 6) + Math.sin(now / 250 + k) * .4);
