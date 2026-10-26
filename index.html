@@ -210,10 +210,12 @@ const postMat = new THREE.ShaderMaterial({
 });
 const postScene = new THREE.Scene(), postCam = new THREE.Camera();
 const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), postMat); quad.frustumCulled = false; postScene.add(quad);
+let redrawPaused = false;                   // a resize clears the canvas: redraw the frozen pause frame once
 function onResize() {
   renderer.setSize(innerWidth, innerHeight);
   rt.setSize(Math.round(RT_H * innerWidth / innerHeight), RT_H);
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  redrawPaused = true;
 }
 addEventListener('resize', onResize); onResize();
 
@@ -517,6 +519,9 @@ const floorSign = (n, arrow) => plateTex('floor' + n + arrow, (g, w, h) => {
 const steelMat = new THREE.MeshStandardMaterial({ color: 0x4a4f50, metalness: .7, roughness: .4 });
 const doorPalette = [0x73827b, 0x6a7a86, 0x86836f].map(c => new THREE.MeshLambertMaterial({ color: c }));
 const doorFrameMat = new THREE.MeshLambertMaterial({ color: 0x2a2b27 }), glassDark = new THREE.MeshStandardMaterial({ color: 0x0a1214, roughness: .1, metalness: .3 });
+glassDark.onBeforeCompile = sh => {         // dark glass ignores point lights (camera fill light, lamps, ghost glow): only the torch (the one spot light) shows up as a highlight
+  sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_begin>', THREE.ShaderChunk.lights_fragment_begin.replace('#if ( NUM_POINT_LIGHTS > 0 ) && defined( RE_Direct )', '#if 0'));
+};
 function meshAdder(g) { return (geo, mat, x, y, z, rx = 0, ry = 0, rz = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.set(rx, ry, rz); g.add(m); return m; }; }
 function makeWardDoor(n) {
   const g = new THREE.Group(), add = meshAdder(g), B = THREE.BoxGeometry;
@@ -962,7 +967,7 @@ function buildLamps() {
 // ================= [2 PLAYER] player body / arms =================
 const skin = new THREE.MeshStandardMaterial({ color: 0xd8a788, roughness: .72 }), cloth = new THREE.MeshStandardMaterial({ color: 0x2b4a6b, roughness: .95 });
 const cuffMat = new THREE.MeshStandardMaterial({ color: 0x1d3349, roughness: .95 }), pants = new THREE.MeshStandardMaterial({ color: 0x2a2a33, roughness: .9 });
-const shoeMat = new THREE.MeshStandardMaterial({ color: 0x141414, roughness: .6 });
+const shoeMat = new THREE.MeshStandardMaterial({ color: 0x141414, roughness: .6 }), soleMat = new THREE.MeshStandardMaterial({ color: 0x3a3632, roughness: .9 });
 const torchMat = new THREE.MeshStandardMaterial({ color: 0x26282b, metalness: .7, roughness: .4 }), torchGrip = new THREE.MeshStandardMaterial({ color: 0x0c0c0d, roughness: .9 }), lensMat = new THREE.MeshBasicMaterial({ color: 0xfff2d8 });
 const limb = (rt, rb, len, mat, seg = 14) => { const g = new THREE.CylinderGeometry(rt, rb, len, seg); g.translate(0, -len / 2, 0); return new THREE.Mesh(g, mat); };   // hangs down from its origin
 const ellip = (r, mat, sx = 1, sy = 1, sz = 1) => { const m = new THREE.Mesh(new THREE.SphereGeometry(r, 16, 12), mat); m.scale.set(sx, sy, sz); return m; };
@@ -973,20 +978,33 @@ function capsule(a, b, r0, r1, mat) {      // tapered segment between two points
   g.add(m, at(ellip(r0, mat), a.x, a.y, a.z), at(ellip(r1, mat), b.x, b.y, b.z)); return g;
 }
 
-// lower body (seen when looking down): rounded jacket + hips, legs with knees and shoes
+// lower body (seen when looking down): a jacket with chest, waist and sloped shoulders over the hips, legs with knees and shoes.
+// Body space: forward = -z. The torso is centred under the neck (NECK_Z behind the resting eye), so the chest sits just behind your eye line.
+const NECK_Z = .08, NECK_U = .18, TORSO_D = .58, HIP_Y = .92;   // neck pivot (base of the neck) behind / below the resting eye, torso depth / width ratio, hip pivot height
+const JACKET = [[.174, .97], [.17, 1.0], [.153, 1.08], [.158, 1.17], [.177, 1.26], [.188, 1.33], [.18, 1.385], [.14, 1.43], [.085, 1.46], [.06, 1.475], [0, 1.48]];   // [radius, height]: waist, chest, sloped shoulders, collar
+function torsoPart(pts, mat) {                           // lathe profile [radius, height] -> oval cross-section (wider than deep)
+  const g = new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r, y - HIP_Y)), 28); g.scale(1, 1, TORSO_D); g.computeVertexNormals(); return new THREE.Mesh(g, mat);
+}
 const body = new THREE.Group();
-const torso = new THREE.Group(); torso.position.set(0, .93, .16); body.add(torso);
-torso.add(at(ellip(.5, cloth, .44, .6, .26), 0, .28, 0), at(ellip(.5, pants, .38, .22, .24), 0, 0, 0));
+const torso = new THREE.Group(); torso.position.set(0, HIP_Y, NECK_Z); body.add(torso);
+torso.add(torsoPart([[0, .84], [.13, .845], [.165, .88], [.176, .93], [.17, .99], [.162, 1.04]], pants),   // hips / seat
+  torsoPart(JACKET, cloth), torsoPart([[.177, .985], [.177, 1.005]], cuffMat));                          // jacket + darker hem
+const zip = new THREE.CatmullRomCurve3(JACKET.slice(1, 8).map(([r, y]) => new THREE.Vector3(0, y - HIP_Y, -r * TORSO_D - .002)));
+torso.add(new THREE.Mesh(new THREE.TubeGeometry(zip, 24, .006, 5), cuffMat));                            // zip line down the front, following the chest
+for (const s of [-1, 1]) torso.add(at(ellip(.066, cloth, 1, .85, .9), s * .172, 1.37 - HIP_Y, 0));      // rounded shoulders
 const legs = [-1, 1].map(s => {
-  const hip = new THREE.Group(); hip.position.set(s * .1, .92, .16); body.add(hip); hip.add(limb(.085, .066, .44, pants));
-  const knee = new THREE.Group(); knee.position.y = -.44; hip.add(knee); knee.add(ellip(.068, pants), limb(.064, .05, .42, pants));
-  const ankle = new THREE.Group(); ankle.position.y = -.42; knee.add(ankle); ankle.add(at(ellip(.5, shoeMat, .11, .08, .27), 0, -.03, -.06));
+  const hip = new THREE.Group(); hip.position.set(s * .095, HIP_Y - .02, NECK_Z); body.add(hip); hip.add(limb(.082, .063, .44, pants));
+  const knee = new THREE.Group(); knee.position.y = -.44; hip.add(knee); knee.add(ellip(.064, pants), limb(.061, .049, .41, pants));
+  const ankle = new THREE.Group(); ankle.position.y = -.41; knee.add(ankle);
+  ankle.add(at(ellip(.5, shoeMat, .1, .085, .25), 0, -.005, -.055), at(ellip(.5, shoeMat, .09, .06, .12), 0, -.02, -.13),                                   // shoe upper + toe box
+    at(new THREE.Mesh(new THREE.BoxGeometry(.1, .022, .27), soleMat), 0, -.039, -.07));                                                                      // sole, flat on the floor
   return { hip, knee, ankle };
 });
 scene.add(body);
 
 // first-person arms: tapered sleeves with elbows and cuffs; the right hand grips a torch aimed down the corridor, the left hangs low and swings into view when running
 const rig = new THREE.Group(); camera.add(rig);
+const ARM_DOWN0 = .4, ARM_DOWN1 = .62;     // rad: looking further down than this, the arms stop following the view (torch held in front of the belly, free arm at your side)
 const ARM_U = .28, ARM_F = .25, SH = [new THREE.Vector3(-.2, -.3, .1), new THREE.Vector3(.2, -.3, .1)];
 function armIK(sh, wrist) {                // two-bone IK in the arm's own vertical plane (elbow below): yaw, shoulder pitch, elbow bend
   const d = wrist.clone().sub(sh), h = Math.hypot(d.x, d.z), r = Math.min(ARM_U + ARM_F - 1e-3, d.length());
@@ -1732,12 +1750,13 @@ function updateLamps(dt, now) {
 }
 
 // ================= [6 RENDER] main loop, update, render =================
-let last = performance.now();
+let last = performance.now(), shownAt = last;   // shownAt: timestamp of the frame on screen
 function loop(now) {
   requestAnimationFrame(loop);
   const dt = Math.min((now - last) / 1000, 0.05); last = now;
+  if (state === 'pause') { if (redrawPaused) { redrawPaused = false; render(0, shownAt); } return; }   // paused: the picture freezes (ghost sway, grain, flicker, breathing all stop)
   if (state === 'play') update(dt, now); else if (state === 'dying') updateDeath(dt);
-  render(dt, now);
+  shownAt = now; render(dt, now);
 }
 const pad2 = n => String(n).padStart(2, '0');
 function drawMini() {                      // pixel-art radar: the square is the whole floor; the only thing drawn is your triangle (pointing where you look)
@@ -1849,7 +1868,9 @@ function render(dt, now) {
   const breathY = Math.sin(P.br) * (.004 + .011 * puff), breathP = Math.sin(P.br - .6) * (.002 + .006 * puff);
   const roll = Math.sin(ph) * .009 * amp - P.ss * .004 - cl(P.tv * .01, .035);
   P.cy += ((P.hidden ? P.cab.L * FH + 1.5 : P.y + 1.6) - P.cy) * Math.min(1, 16 * dt);
-  camera.position.set(P.x + Math.cos(P.yaw) * sway + shakeX, P.cy + bobY + breathY + shakeY, P.z - Math.sin(P.yaw) * sway + shakeZ);
+  const na = P.hidden ? 0 : P.pitch * (P.pitch < 0 ? .6 : .3);                                         // the head tips on the neck (part of the look; the eyes do the rest)
+  const nf = NECK_Z * Math.cos(na) - NECK_U * Math.sin(na) - NECK_Z, nu = NECK_U * Math.cos(na) + NECK_Z * Math.sin(na) - NECK_U;   // looking down brings the eyes forward and lower, out over your chest
+  camera.position.set(P.x + Math.cos(P.yaw) * sway - Math.sin(P.yaw) * nf + shakeX, P.cy + bobY + breathY + nu + shakeY, P.z - Math.sin(P.yaw) * sway - Math.cos(P.yaw) * nf + shakeZ);
   camera.rotation.set(P.pitch - rb * .02 + nod + breathP, P.yaw, roll + deathRoll);
   const fv = 75 + rb * 7; if (Math.abs(camera.fov - fv) > .05) { camera.fov += (fv - camera.fov) * Math.min(1, 5 * dt); camera.updateProjectionMatrix(); }
   body.position.set(P.x, P.y, P.z); body.rotation.y = P.by;
@@ -1857,12 +1878,13 @@ function render(dt, now) {
     const p = ph + (i ? Math.PI : 0), lw = (.5 + run * .3) * mv;
     l.hip.rotation.x = Math.sin(p) * lw; l.knee.rotation.x = -(.06 + Math.max(0, Math.cos(p)) * (.75 + run * .5)) * mv; l.ankle.rotation.x = -(l.hip.rotation.x + l.knee.rotation.x) * .8;
   });
-  torso.rotation.set(-rb * .14 * mv, Math.sin(ph) * .07 * mv, 0);
+  torso.rotation.set(-rb * .06 * mv, Math.sin(ph) * .07 * mv, 0);
 
   // arms: spring lag on mouse look; the torch hand stays fairly steady and only bobs, the free arm swings (and pumps into view when running)
   P.vy += (-60 * P.sy - 14 * P.vy) * h - dY * 3.5; P.vx += (-60 * P.sx - 14 * P.vx) * h - dP * 3.5;
   P.sy = cl(P.sy + P.vy * h, .08); P.sx = cl(P.sx + P.vx * h, .06);
-  rig.rotation.set(P.sx - nod * .6 + breathP * 1.5, P.sy, -roll * .5); rig.position.set(-sway * .35, -bobY * .45 + breathY * 1.6, rb * .02);
+  const dn = -P.pitch - ARM_DOWN0, armHold = dn > 0 ? dn - (ARM_DOWN1 - ARM_DOWN0) * Math.tanh(dn / (ARM_DOWN1 - ARM_DOWN0)) : 0;   // arms follow the view down to ARM_DOWN0, then ease to a stop at ARM_DOWN1
+  rig.rotation.set(P.sx - nod * .6 + breathP * 1.5 + armHold, P.sy, -roll * .5); rig.position.set(-sway * .35, -bobY * .45 + breathY * 1.6, rb * .02);
   const s1 = Math.sin(ph), swing = mv * (.1 + .32 * rb), lerp = (a, b, t) => a + (b - a) * t, R = POSE.R, Lp = POSE.L, Lr = POSE.Lrun, tr = Math.min(1, rb * 1.2);
   armR.sh.rotation.set(R.a + s1 * swing * .25 - rb * .12 + breathP * 2, R.yaw + rb * .04, 0); armR.el.rotation.x = R.e + rb * .06 + (s1 * .5 + .5) * swing * .15;   // running: the torch drops a little and jolts
   armR.hand.rotation.set(-Math.cos(ph * 2) * .02 * amp, 0, s1 * .03 * amp);
