@@ -32,13 +32,17 @@
   #ov p { max-width:34em; margin:0 0 30px; line-height:1.35; font-size:25px; opacity:.88; }
   #ov button { font:inherit; font-size:30px; letter-spacing:.08em; color:var(--bg); background:var(--ink); border:0; padding:10px 44px; cursor:pointer; }
   #ov button:hover, #ov button:focus-visible { background:#fff; outline:3px solid var(--exit); outline-offset:3px; }
-  #mini { position:fixed; right:20px; top:54px; width:132px; height:132px; background:rgba(0,0,0,.55); border:1px solid rgba(207,216,200,.32); box-shadow:inset 0 0 24px #000; pointer-events:none; }
-  #mini i { position:absolute; width:6px; height:6px; margin:-3px 0 0 -3px; border-radius:50%; background:#e8efe0; box-shadow:0 0 7px #e8efe0aa; }
+  #mini { position:fixed; right:20px; top:54px; width:138px; height:138px; background:#000; image-rendering:pixelated; pointer-events:none; }
   #alert { position:fixed; left:50%; top:62px; transform:translateX(-50%); font:40px/1 "VT323",monospace; letter-spacing:.14em; color:#e8efe0; text-shadow:0 0 10px #000, 2px 0 #b3202a, -2px 0 #3a7fb0; pointer-events:none; animation:gl .35s steps(2) infinite; z-index:3; }
   @keyframes gl { 0% { transform:translateX(-50%) translateX(0); } 50% { transform:translateX(-50%) translateX(3px); opacity:.75; } 100% { transform:translateX(-50%) translateX(-2px); } }
   #cue { position:fixed; left:20px; top:52px; font:24px/1 "VT323",monospace; letter-spacing:.1em; color:#bfe8ff; text-shadow:0 0 8px #000, 0 0 10px #4a86b8; padding:3px 8px; border-left:3px solid #bfe8ff; background:#000a; pointer-events:none; z-index:3; animation:bl .5s steps(1) infinite; }
   #keyhud { position:fixed; left:50%; bottom:18px; transform:translateX(-50%); display:flex; align-items:center; gap:10px; font:30px/1 "VT323",monospace; letter-spacing:.12em; color:#e6c25a; padding:4px 16px 4px 12px; background:#000a; border:1px solid #e6c25a88; text-shadow:0 0 8px #000; pointer-events:none; }
   #msg { position:fixed; left:50%; bottom:31%; transform:translateX(-50%); font:36px/1 "VT323",monospace; letter-spacing:.1em; color:#ffb4a4; text-shadow:0 0 10px #000; padding:6px 18px; background:#000b; border:1px solid #b3202a99; pointer-events:none; z-index:3; }
+  #omen { position:fixed; left:50%; top:62px; transform:translateX(-50%); font:36px/1 "VT323",monospace; letter-spacing:.12em; color:#e8b8ae; text-shadow:0 0 10px #000, 0 0 16px #b3202a; pointer-events:none; z-index:3; }
+  #diff { display:flex; gap:10px; margin:0 0 14px; }
+  #diff button { font-size:24px; letter-spacing:.08em; padding:6px 22px; background:transparent; color:var(--ink); border:1px solid #cfd8c8aa; }
+  #diff button.sel { background:var(--ink); color:var(--bg); }
+  #best { margin:0 0 24px; font-size:24px; line-height:1.35; color:#cfd8c8; white-space:pre-line; }
   .hide { display:none !important; }
 </style>
 </head>
@@ -48,8 +52,9 @@
 <div id="rec" class="hide"><b>●</b> REC <span id="tm">00:00</span></div>
 <div id="floor" class="hide">FLOOR 1</div>
 <div id="potion" class="hide"></div>
-<div id="mini" class="hide"><i id="dot"></i></div>
+<canvas id="mini" width="69" height="69" class="hide"></canvas>
 <div id="alert" class="hide">ANOMALY DETECTED</div>
+<div id="omen" class="hide">IT REMEMBERS THIS CABINET</div>
 <div id="cue" class="hide">ENTITY RELOCATED</div>
 <div id="prompt" class="hide"></div>
 <div id="msg" class="hide"></div>
@@ -57,7 +62,9 @@
 <div id="hud" class="hide">Find the key, then the green EXIT door<div id="bar"><i></i></div></div>
 <div id="ov">
   <h1 id="t">GHOST MAZE</h1>
-  <p id="s">Two ghosts with glowing red eyes roam these dark halls, over two floors. If one spots you, run &mdash; and hide in a cabinet.<br>The way out is a green EXIT door set into a wall &mdash; and it is locked. The only key rests on a chair somewhere in the dark &mdash; and taking it wakes something worse. There is no map.<br><br>W A S D  Move &nbsp;&middot;&nbsp; Mouse  Look &nbsp;&middot;&nbsp; Shift  Run<br>E  Hide / turn on lights / drink potions &nbsp;&middot;&nbsp; Esc  Pause</p>
+  <p id="s">Two ghosts with glowing red eyes roam these dark halls, over two floors. If one spots you, run &mdash; and hide in a cabinet.<br>The way out is a green EXIT door set into a wall &mdash; and it is locked. The only key rests on a chair somewhere in the dark &mdash; and taking it wakes something worse. There is no real map &mdash; only a tiny pixel radar showing where you are on the floor.<br><br>W A S D  Move &nbsp;&middot;&nbsp; Mouse  Look &nbsp;&middot;&nbsp; Shift  Run<br>E  Hide / turn on lights / drink potions &nbsp;&middot;&nbsp; Esc  Pause</p>
+  <div id="diff"></div>
+  <div id="best"></div>
   <button id="b">START</button>
 </div>
 
@@ -70,14 +77,20 @@
 // [1 CONSTANTS]
 const S = 4, N = 11, W = 2 * N + 1, WH = 3.2, FH = 3.2;   // tile size, cells per side, grid size, wall height, floor-to-floor height
 const WALK = 3.6, RUN = 6.5;                                // player speeds
-const WANDER = 2.1, CHASE = 5.35;                            // ghost speeds
-const SIGHT = 15, FOV = 0.9, NEAR = 8;                      // ghost front sight range, half-angle, all-around detection range (not through walls)
-const BLACK = 5.5;                                          // black ghost chase speed (normal ghost chase = 5.2)
+const FOV = 0.9;                                            // ghost sight half-angle (rad)
+const BASE = { WANDER: 2.1, CHASE: 5.2, SIGHT: 15, NEAR: 8, BLACK: 5.5 };   // normal-difficulty ghost tuning: wander / chase speed, front sight range, all-around detection range (not through walls), black ghost chase speed
+let WANDER = BASE.WANDER, CHASE = BASE.CHASE, SIGHT = BASE.SIGHT, NEAR = BASE.NEAR, BLACK = BASE.BLACK;   // active values, set from the chosen difficulty at the start of every run
+const DIFFS = {                                             // difficulty: ghost speed / sight / black-ghost speed multipliers
+  easy: { label: 'EASY', desc: 'EASY - slower ghosts, shorter sight', spd: .9, sight: .85, black: .92 },
+  normal: { label: 'NORMAL', desc: 'NORMAL - the intended experience', spd: 1, sight: 1, black: 1 },
+  hard: { label: 'HARD', desc: 'HARD - faster ghosts, longer sight', spd: 1.1, sight: 1.15, black: 1.06 } };
+const SAVE_KEY = 'ghostMaze.v1';                            // localStorage key for records + difficulty
 const BLACK_RANGE = 48;                                     // distance (m) over which the black ghost's heartbeat / red edge fade in (normal ghosts: 16)
 const ANOMALY_TIME = 4;                                     // s: "ANOMALY DETECTED" + unison lamp flicker right after the key is taken (the black ghost appears at that moment)
 const CAB_MEMORY = 240;                                     // s: how long the black ghost remembers a cabinet you hid in while it was hunting you
 const BLACK_HUNT_DIST = 30;                                 // m: black ghost closer than this when you hide = "actually hunted" -> that cabinet is remembered
 const DOOR_NOISE_RANGE = 8, BLACK_WAIT_NEAR = 7;            // hiding within this many metres of the black ghost: it waits BLACK_WAIT_NEAR s (normal: WAIT) before teleporting away
+const OMEN_TIME = 5;                                        // s: the "it remembers this cabinet" omen after the black ghost teleports away from a cabinet you hid in
 const DEATH_TIME = 1.1;                                     // s: capture camera sequence (turn + shake) before the GAME OVER overlay
 const KEY_EXIT_MIN = 30, KEY_CAB_DIST = 14, KEY_PLACE_TRIES = 8;   // key chair: min maze-path distance (tiles) from the exit door; a cabinet must stand within KEY_CAB_DIST m; layout retries
 const LOSE = 4.5, WAIT = 3, GRACE = 3, VISION = 60;         // seconds: give-up, cabinet wait, start grace, potion duration
@@ -166,11 +179,12 @@ scene.fog = new THREE.FogExp2(0x050507, 0.07);
 const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.05, 140);
 camera.rotation.order = 'YXZ';
 scene.add(camera);
-scene.add(new THREE.AmbientLight(0x303848, 0.75));
+const ambient = new THREE.AmbientLight(0x303848, 0.75); scene.add(ambient);
+ambient.layers.enable(3); ambient.layers.enable(4);      // also lights the ghost / player passes (layers GL(0) / GL(1), defined below)
 
 // low-quality camcorder filter
 const RT_H = 270;
-const rt = new THREE.WebGLRenderTarget(480, RT_H, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
+const rt = new THREE.WebGLRenderTarget(480, RT_H, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, stencilBuffer: true });   // stencil: Ghost Sight draws each pixel once
 const postMat = new THREE.ShaderMaterial({
   uniforms: { t: { value: rt.texture }, time: { value: 0 }, hurt: { value: 0 }, glitch: { value: 0 } },
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }',
@@ -276,7 +290,12 @@ const pc = new THREE.PlaneGeometry(S, S); pc.rotateX(Math.PI / 2);
 // Each frame renders the two floors as separate passes into one shared depth buffer, so a light only ever shades its own floor,
 // while the stairwell still shows both floors. Flashlight + camera light sit on both floor layers.
 const FL = L => L + 1;
-function setFloor(obj, L, skipLights = false) { obj.traverse(o => { if (skipLights && o.isLight) return; o.layers.set(FL(L)); o.userData.floor = L; }); }
+// Ghosts (and the player's own body) live on separate layers GL(L) and are drawn in their own passes AFTER both floors, with the same lights as
+// floor L (every floor-L light is also on GL(L)). Between the two, the Ghost Sight pass (layer XL) draws the ghosts' silhouettes with an inverted
+// depth test against the walls/floors only, so the x-ray shows exactly the parts of a ghost that something is hiding.
+const GL = L => L + 3, XL = 5;
+function setFloor(obj, L, skipLights = false) { obj.traverse(o => { if (skipLights && o.isLight) return; o.layers.set(FL(L)); if (o.isLight) o.layers.enable(GL(L)); o.userData.floor = L; }); }
+function setActorLayer(obj, L) { obj.traverse(o => { if (!o.isLight) o.layers.set(o.userData.xray ? XL : GL(L)); }); }   // ghost / player meshes; lights keep their own layers
 const wallGeo = new THREE.BoxGeometry(S, WH, S);
 const wallsM = [0, 1].map(L => new THREE.InstancedMesh(wallGeo, wallMat, MAXT));
 const ceilsM = [0, 1].map(L => new THREE.InstancedMesh(pc, ceilMat, MAXT));
@@ -290,7 +309,7 @@ const cellOf = (x, z) => ({ x: Math.floor(x / S), z: Math.floor(z / S) });
 const center = c => ({ x: (c.x + .5) * S, z: (c.z + .5) * S });
 const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.random() * (i + 1) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const solid = (x, z, L) => { const gx = Math.floor(x / S), gz = Math.floor(z / S); return gx < 0 || gz < 0 || gx >= W || gz >= W || grids[L][gz][gx]; };
-let cabs = [], chairs = [], props = [], lamps = [], allCells = [], reserved = [], exitPos = { x: 0, z: 0 }, exitDoor = { x: 0, z: 0 }, exitCell = { x: 1, z: 1 }, propUsed = new Set(), exitL = 1;
+let cabs = [], chairs = [], props = [], lamps = [], allCells = [], reserved = [], exitDoor = { x: 0, z: 0 }, exitCell = { x: 1, z: 1 }, propUsed = new Set(), exitL = 1;
 const hit = (x, z, r, L) => solid(x - r, z - r, L) || solid(x + r, z - r, L) || solid(x - r, z + r, L) || solid(x + r, z + r, L) ||
   cabs.some(c => c.L === L && x + r > c.x0 && x - r < c.x1 && z + r > c.z0 && z - r < c.z1) || chairs.some(c => c.L === L && x + r > c.x0 && x - r < c.x1 && z + r > c.z0 && z - r < c.z1) ||
   props.some(c => c.L === L && x + r > c.x0 && x - r < c.x1 && z + r > c.z0 && z - r < c.z1);
@@ -341,7 +360,7 @@ function buildExit() {
   const e = cand[Math.random() * cand.length | 0].c; exitL = 1; exitCell = e; reserved.push({ L: 1, x: e.x, z: e.z });
   const wl = DIRS.filter(([a, b]) => grids[1][e.z + b][e.x + a]), [dx, dz] = wl[Math.random() * wl.length | 0];
   const c0 = center(e), gx = c0.x + dx * S / 2, gz = c0.z + dz * S / 2, fx = -dx, fz = -dz;
-  exitPos = { x: gx + fx * .8, z: gz + fz * .8 }; exitDoor = { x: gx, z: gz };
+  exitDoor = { x: gx, z: gz };
   const g = new THREE.Group(); g.position.set(gx, FH, gz); g.rotation.y = Math.atan2(fx, fz);
   const frameM = new THREE.MeshLambertMaterial({ color: 0x2b302d }), doorM = new THREE.MeshLambertMaterial({ color: 0x3d5a4a, emissive: 0x0d3321 });
   const add = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); g.add(m); };
@@ -495,14 +514,7 @@ const floorSign = (n, arrow) => plateTex('floor' + n + arrow, (g, w, h) => {
   g.fillStyle = '#9db9b3'; g.font = '24px VT323, monospace'; g.fillText('WARD ' + 'AB'[n - 1] + '  /  ROOMS ' + n + '01-' + n + '12', 22, h * .84);
   if (arrow) { g.fillStyle = '#f0f6f2'; const ay = arrow === 'up' ? 1 : -1; g.beginPath(); g.moveTo(w - 52, h * .46 - 26 * ay); g.lineTo(w - 82, h * .46 + 4 * ay); g.lineTo(w - 22, h * .46 + 4 * ay); g.fill(); g.fillRect(w - 58, h * .46 + (ay > 0 ? 4 : -22), 12, 22); }
 }, 256, 128);
-const emergTex = on => plateTex('emerg' + on, (g, w, h) => {      // running-man pictogram + arrow, no "EXIT" text so it is never mistaken for the real exit door
-  g.fillStyle = on ? '#0b3a22' : '#161b18'; g.fillRect(0, 0, w, h); g.strokeStyle = on ? '#7af2ac' : '#27322b'; g.lineWidth = 3; g.strokeRect(3, 3, w - 6, h - 6);
-  g.fillStyle = g.strokeStyle; g.lineCap = 'round'; g.lineWidth = 6; g.beginPath(); g.arc(46, 17, 6, 0, 6.3); g.fill();
-  g.beginPath(); g.moveTo(46, 26); g.lineTo(40, 42); g.moveTo(41, 30); g.lineTo(28, 25); g.moveTo(44, 29); g.lineTo(58, 37); g.moveTo(40, 42); g.lineTo(30, 56); g.moveTo(40, 42); g.lineTo(52, 50); g.lineTo(50, 60); g.stroke();
-  g.lineWidth = 8; g.beginPath(); g.moveTo(80, 32); g.lineTo(108, 32); g.stroke(); g.beginPath(); g.moveTo(104, 20); g.lineTo(118, 32); g.lineTo(104, 44); g.fill();
-});
-const steelMat = new THREE.MeshStandardMaterial({ color: 0x4a4f50, metalness: .7, roughness: .4 }), vinylMat = new THREE.MeshStandardMaterial({ color: 0x15151a, roughness: .55 });
-const rubberMat = new THREE.MeshLambertMaterial({ color: 0x0e0e0f }), mattressMat = new THREE.MeshStandardMaterial({ color: 0x8c9a98, roughness: .6 }), sheetMat2 = new THREE.MeshLambertMaterial({ color: 0xcfc9b8 });
+const steelMat = new THREE.MeshStandardMaterial({ color: 0x4a4f50, metalness: .7, roughness: .4 });
 const doorPalette = [0x73827b, 0x6a7a86, 0x86836f].map(c => new THREE.MeshLambertMaterial({ color: c }));
 const doorFrameMat = new THREE.MeshLambertMaterial({ color: 0x2a2b27 }), glassDark = new THREE.MeshStandardMaterial({ color: 0x0a1214, roughness: .1, metalness: .3 });
 function meshAdder(g) { return (geo, mat, x, y, z, rx = 0, ry = 0, rz = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.set(rx, ry, rz); g.add(m); return m; }; }
@@ -524,41 +536,6 @@ function makeFloorSign(n, arrow) {
   add(new THREE.PlaneGeometry(.92, .46), new THREE.MeshLambertMaterial({ map: floorSign(n, arrow) }), 0, 0, .032);
   return g;
 }
-function makeEmergency(on) {
-  const g = new THREE.Group(), add = meshAdder(g);
-  add(new THREE.BoxGeometry(.58, .26, .07), doorFrameMat, 0, 0, .035);
-  add(new THREE.PlaneGeometry(.52, .2), on ? new THREE.MeshBasicMaterial({ map: emergTex(true) }) : new THREE.MeshLambertMaterial({ map: emergTex(false) }), 0, 0, .072);
-  if (on) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0x6dffb0, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: .3 })); sp.scale.set(1.3, .8, 1); sp.position.set(0, 0, .2); g.add(sp); }
-  return g;
-}
-function makeWheelchair() {
-  const g = new THREE.Group(), add = meshAdder(g), B = THREE.BoxGeometry, C = THREE.CylinderGeometry, T = THREE.TorusGeometry;
-  add(new B(.46, .06, .44), vinylMat, 0, .5, 0); add(new B(.46, .42, .05), vinylMat, 0, .76, -.22, -.08); add(new B(.46, .02, .02), steelMat, 0, .42, 0);
-  for (const s of [-1, 1]) {
-    add(new B(.035, .035, .46), steelMat, s * .24, .46, 0); add(new B(.05, .035, .34), vinylMat, s * .245, .68, -.02); add(new C(.014, .014, .22, 6), steelMat, s * .245, .58, .12);
-    add(new C(.014, .014, .5, 6), steelMat, s * .22, .78, -.24, -.08); add(new B(.05, .04, .14), vinylMat, s * .22, 1.04, -.3);
-    add(new T(.29, .018, 8, 28), rubberMat, s * .3, .3, -.05, 0, Math.PI / 2, 0); add(new T(.25, .008, 6, 24), steelMat, s * .34, .3, -.05, 0, Math.PI / 2, 0);
-    add(new C(.04, .04, .05, 10), steelMat, s * .3, .3, -.05, 0, 0, Math.PI / 2);
-    for (let k = 0; k < 4; k++) add(new B(.008, .56, .008), steelMat, s * .3, .3, -.05, k * Math.PI / 4);
-    add(new C(.07, .07, .035, 12), rubberMat, s * .2, .07, .36, 0, 0, Math.PI / 2); add(new B(.02, .13, .02), steelMat, s * .2, .15, .36);
-    add(new C(.012, .012, .4, 6), steelMat, s * .14, .3, .34, .55); add(new B(.14, .02, .12), steelMat, s * .14, .13, .46, .3);
-  }
-  return g;
-}
-function makeGurney(sheeted) {
-  const g = new THREE.Group(), add = meshAdder(g), B = THREE.BoxGeometry, C = THREE.CylinderGeometry;
-  for (const s of [-1, 1]) {
-    add(new B(.045, .05, 1.9), steelMat, s * .3, .5, 0);
-    add(new B(.02, .03, 1.1), steelMat, s * .35, .9, .1); add(new B(.02, .24, .02), steelMat, s * .35, .79, -.45); add(new B(.02, .24, .02), steelMat, s * .35, .79, .65);
-    for (const z of [-.8, .8]) { add(new C(.075, .075, .04, 12), rubberMat, s * .25, .075, z, 0, 0, Math.PI / 2); add(new B(.02, .4, .02), steelMat, s * .25, .3, z); }
-  }
-  for (const z of [-.8, 0, .8]) add(new B(.62, .04, .04), steelMat, 0, .5, z);
-  add(new B(.5, .05, 1.1), steelMat, 0, .12, 0); add(new B(.18, .3, .5), steelMat, 0, .3, 0);
-  add(new B(.66, .1, 1.86), mattressMat, 0, .6, 0); add(new B(.5, .09, .3), sheetMat2, 0, .69, -.72);
-  if (sheeted) { add(new B(.68, .05, 1.15), sheetMat2, 0, .67, .3); for (const s of [-1, 1]) add(new B(.02, .18, 1.1), sheetMat2, s * .34, .6, .3); }
-  add(new B(.66, .3, .03), steelMat, 0, .78, .95); add(new B(.66, .32, .03), steelMat, 0, .78, -.95);
-  return g;
-}
 function buildProps() {
   clearG(propGroup); props = [];
   const key = (L, x, z) => L + ',' + x + ',' + z, used = new Set(); propUsed = used;
@@ -574,16 +551,10 @@ function buildProps() {
   };
   const anchor = (c, depth, lat) => { const [dx, dz] = c.d, c0 = center(c); return { x: c0.x + dx * (S / 2 - depth) - dz * lat, z: c0.z + dz * (S / 2 - depth) + dx * lat, ry: Math.atan2(-dx, -dz) }; };
   const place = (g, a, y, L) => { g.position.set(a.x, L * FH + y, a.z); g.rotation.y = a.ry; propGroup.add(g); setFloor(g, L); };
-  const rectOf = (L, x, z, hw, hl, ry) => { const ex = Math.abs(Math.cos(ry)) * hw + Math.abs(Math.sin(ry)) * hl, ez = Math.abs(Math.sin(ry)) * hw + Math.abs(Math.cos(ry)) * hl; props.push({ L, x0: x - ex, x1: x + ex, z0: z - ez, z1: z + ez }); };
-  const floorProp = (L, c, mk, depth, hw, hl) => {                     // furniture parked parallel to the wall, never blocking the corridor
-    const a = anchor(c, depth, rnd(-.7, .7)), ry = a.ry + (Math.random() < .5 ? 1 : -1) * Math.PI / 2 + rnd(-.12, .12), g = mk();
-    g.position.set(a.x, L * FH, a.z); g.rotation.y = ry; propGroup.add(g); setFloor(g, L); rectOf(L, a.x, a.z, hw, hl, ry);
-  };
   for (let L = 0; L < 2; L++) {
     const nums = shuffle([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
     pick(L, 6, 3).forEach((c, i) => place(makeWardDoor((L + 1) * 100 + nums[i]), anchor(c, 0, rnd(-.7, .7)), 0, L));       // ward doors with room number plates
     pick(L, 3, 6).forEach(c => place(makeFloorSign(L + 1, ''), anchor(c, 0, 0), 1.9, L));                                    // floor indicators
-    pick(L, 5, 4, 2).forEach(c => place(makeEmergency(Math.random() < .6), anchor(c, 0, rnd(-.5, .5)), 2.72, L));            // emergency lights, some lit some dead
   }
   for (const s of stairs) {                                                                                                  // stair direction signs
     for (const [L, t, arrow] of [[0, s.a, 'up'], [1, s.b, 'down']]) {
@@ -591,8 +562,6 @@ function buildProps() {
       if (c) { used.add(key(L, c.x, c.z)); place(makeFloorSign(arrow === 'up' ? 2 : 1, arrow), anchor(c, 0, 0), 1.9, L); }
     }
   }
-  [0, 1, Math.random() < .5 ? 0 : 1].forEach(L => { const c = pick(L, 1, 8)[0]; if (c) floorProp(L, c, makeWheelchair, .55, .36, .5); });   // wheelchairs
-  [0, 1].forEach(L => { const c = pick(L, 1, 8)[0]; if (c) floorProp(L, c, () => makeGurney(Math.random() < .6), .62, .4, 1.0); });             // gurneys
 }
 
 
@@ -602,7 +571,49 @@ const paperTex = canvasTex(64, 90, (g, w, h) => { g.fillStyle = '#d4d0c2'; g.fil
 const dressDummy = new THREE.Object3D();
 const mkInst = (geo, mat, L, cap) => { const m = new THREE.InstancedMesh(geo, mat, cap); m.count = 0; m.frustumCulled = false; setFloor(m, L); scene.add(m); return m; };
 const flatGeo = (w, h, up) => { const g = new THREE.PlaneGeometry(w, h); g.rotateX(up ? -Math.PI / 2 : Math.PI / 2); return g; };
+// flat decals (no thickness, no collision): bloody handprints dragged down the walls, blood pools with drag trails, medical debris, footprint trails
+const BLOOD = 'rgba(88,8,6,', blood = a => BLOOD + a + ')';
+function drawHand(c, x, y, sc, rot, a) {   // a palm print: palm, four fingers, thumb
+  c.save(); c.translate(x, y); c.rotate(rot); c.scale(sc, sc); c.fillStyle = blood(a);
+  c.beginPath(); c.ellipse(0, 0, 13, 15, 0, 0, 6.2832); c.fill();
+  [[-10, -24, 5, 13], [-3.5, -28, 5, 15], [3.5, -27, 5, 14], [10, -22, 4.5, 11]].forEach(([fx, fy, rx, ry]) => { c.beginPath(); c.ellipse(fx, fy, rx, ry, (fx / 40), 0, 6.2832); c.fill(); });
+  c.beginPath(); c.ellipse(15, -2, 4.5, 10, -.9, 0, 6.2832); c.fill();
+  c.restore();
+}
+const smearTex = canvasTex(128, 128, (c, w, h) => {
+  drawHand(c, 64, 40, 1.1, rnd(-.25, .25), .85);
+  for (let i = 0; i < 5; i++) {               // the hand slid down the wall
+    const x = 46 + i * 9 + rnd(-2, 2), gr = c.createLinearGradient(0, 30, 0, 128); gr.addColorStop(0, blood(.7)); gr.addColorStop(1, blood(0));
+    c.fillStyle = gr; c.fillRect(x, 26 + rnd(0, 10), rnd(3, 6), rnd(60, 98));
+  }
+  for (let i = 0; i < 4; i++) { const x = rnd(40, 90), y = rnd(60, 90); c.fillStyle = blood(.8); c.fillRect(x, y, 2, rnd(14, 34)); c.beginPath(); c.arc(x + 1, y + 30, 2, 0, 6.2832); c.fill(); }   // drips
+});
+const poolTex = canvasTex(128, 128, (c, w, h) => {
+  const blob = (cx, cy, r, a) => { c.fillStyle = blood(a); c.beginPath(); for (let k = 0; k <= 20; k++) { const t = k / 20 * 6.2832, rr = r * (.75 + Math.random() * .4); k ? c.lineTo(cx + Math.cos(t) * rr, cy + Math.sin(t) * rr) : c.moveTo(cx + rr, cy); } c.closePath(); c.fill(); };
+  blob(46, 64, 26, .9); blob(40, 60, 14, .5);
+  for (let i = 0; i < 6; i++) { const y = 52 + i * 4 + rnd(-2, 2), gr = c.createLinearGradient(50, 0, 128, 0); gr.addColorStop(0, blood(.75)); gr.addColorStop(1, blood(0)); c.fillStyle = gr; c.fillRect(50, y, rnd(50, 78), rnd(2, 4)); }   // something was dragged away
+  for (let i = 0; i < 9; i++) blob(rnd(8, 120), rnd(8, 120), rnd(1.5, 4), .8);
+});
+const debrisTex = canvasTex(128, 128, (c, w, h) => {
+  for (let i = 0; i < 14; i++) { c.save(); c.translate(rnd(10, 118), rnd(10, 118)); c.rotate(rnd(0, 6.28)); if (i % 3) { c.fillStyle = '#e6e2d6'; c.beginPath(); c.ellipse(0, 0, 3.4, 3.4, 0, 0, 6.2832); c.fill(); } else { c.fillStyle = '#c23a2a'; c.fillRect(-5, -2.2, 5, 4.4); c.fillStyle = '#e9e5da'; c.fillRect(0, -2.2, 5, 4.4); } c.restore(); }   // spilled pills and capsules
+  c.save(); c.translate(36, 34); c.rotate(.6); c.fillStyle = '#6a78c8'; c.beginPath(); c.ellipse(0, 6, 11, 14, 0, 0, 6.2832); c.fill();                 // a dropped nitrile glove
+  [[-8, -12], [-3, -15], [2, -15], [7, -12]].forEach(([fx, fy]) => { c.beginPath(); c.ellipse(fx, fy, 2.6, 7, 0, 0, 6.2832); c.fill(); }); c.beginPath(); c.ellipse(12, 2, 2.6, 7, -.9, 0, 6.2832); c.fill(); c.fillRect(-9, 16, 18, 10); c.restore();
+  c.save(); c.translate(86, 88); c.rotate(-.5); c.fillStyle = '#e8ecee'; c.fillRect(-18, -3, 30, 6); c.fillStyle = '#d06a24'; c.fillRect(12, -4, 4, 8); c.fillRect(16, -1, 10, 2); c.strokeStyle = '#a8b0b4'; c.lineWidth = 1; c.beginPath(); c.moveTo(-18, 0); c.lineTo(-30, 0); c.stroke(); c.fillStyle = blood(.6); c.fillRect(-14, -2, 9, 4); c.restore();   // a used syringe
+  c.save(); c.translate(90, 30); c.rotate(.3); c.fillStyle = '#d4d0c2'; c.fillRect(-12, -15, 24, 30); c.fillStyle = 'rgba(40,40,40,.5)'; for (let y = -10; y < 12; y += 5) c.fillRect(-9, y, 16, 1.5); c.restore();   // torn chart page
+});
+const printsTex = canvasTex(64, 256, (c, w, h) => {
+  for (let i = 0; i < 8; i++) {               // bare footprints walking one way, fading out (and they lead straight into the wall)
+    const x = i % 2 ? 22 : 42, y = 236 - i * 30, a = .85 * (1 - i / 9);
+    c.fillStyle = blood(a); c.beginPath(); c.ellipse(x, y, 6, 10, 0, 0, 6.2832); c.fill(); c.beginPath(); c.ellipse(x, y + 12, 4.5, 5, 0, 0, 6.2832); c.fill();
+    for (let k = 0; k < 5; k++) { c.beginPath(); c.arc(x - 5 + k * 2.6, y - 12 - (k === 0 ? 1 : 0) + Math.abs(k - 1) * .6, k ? 1.6 : 2.4, 0, 6.2832); c.fill(); }
+  }
+});
+const decalMat = tex => new THREE.MeshLambertMaterial({ map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
 const dress = [0, 1].map(L => ({
+  smears: mkInst(new THREE.PlaneGeometry(.55, .55), decalMat(smearTex), L, 16),
+  pools: mkInst(flatGeo(1.3, 1.3, true), decalMat(poolTex), L, 12),
+  debris: mkInst(flatGeo(.9, .9, true), decalMat(debrisTex), L, 16),
+  prints: mkInst(flatGeo(.6, 2.4, true), decalMat(printsTex), L, 8),
   rails: mkInst(new THREE.BoxGeometry(S - .45, .045, .045), new THREE.MeshStandardMaterial({ color: 0x9aa09c, metalness: .5, roughness: .45 }), L, 260),
   stripes: mkInst(flatGeo(.16, S, true), new THREE.MeshStandardMaterial({ color: L ? 0x3f9a6a : 0xb59a34, roughness: .9, transparent: true, opacity: .5, polygonOffset: true, polygonOffsetFactor: -2 }), L, 260),
   papers: mkInst(flatGeo(.21, .29, true), new THREE.MeshLambertMaterial({ map: paperTex }), L, 60),
@@ -635,7 +646,240 @@ function makeIV() {
   add(new C(.004, .004, .9, 4), blackMat, .13, 1.1, 0);
   return g;
 }
+// ----- wall-mounted hospital props: every one sits within ~15 cm of the wall (the player keeps 35 cm), so none of them narrows a corridor or needs collision -----
+const rrect = (c, x, y, w, h, r) => { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); };
+const ageTex = (c, w, h, k = 1) => { stains(c, w, h, Math.max(1, Math.round(5 * k)), 'rgba(70,52,28,.3)'); grain(c, w, h, Math.round(w * h / 40), .07); };
+const lam = col => new THREE.MeshLambertMaterial({ color: col });
+const plasticW = lam(0xd2d4cc), plasticG = lam(0x5b635f), beigeMat = lam(0xb9ae93), darkPlastic = lam(0x1b1c1d);
+const sharpsRed = lam(0xa8231f), sharpsLid = lam(0xd7c03c);
+const textOn = (c, s, x, y, px, col, align = 'center') => { c.fillStyle = col; c.font = px + 'px VT323, monospace'; c.textAlign = align; c.textBaseline = 'middle'; c.fillText(s, x, y); };
+const POSTERS = ['wash', 'quiet', 'eye', 'body', 'hours', 'missing'];
+const posterTex = v => plateTex('poster' + v, (c, w, h) => {
+  const cx = w / 2, T = (s, y, px, col) => textOn(c, s, cx, y, px, col);
+  c.fillStyle = '#dcd7c8'; c.fillRect(0, 0, w, h);
+  if (v === 'wash') {
+    c.fillStyle = '#2b6aa8'; c.fillRect(0, 0, w, 78); T('WASH YOUR', 26, 38, '#f4f6f8'); T('HANDS', 58, 38, '#f4f6f8');
+    c.fillStyle = '#2b6aa8'; c.beginPath(); c.ellipse(cx, 232, 46, 54, 0, 0, 6.2832); c.fill();
+    for (let i = 0; i < 4; i++) { rrect(c, cx - 45 + i * 23, 122 - (i === 1 || i === 2 ? 14 : 0), 19, 100, 9); c.fill(); }
+    c.save(); c.translate(cx + 48, 226); c.rotate(-.7); rrect(c, -10, -62, 20, 70, 10); c.fill(); c.restore();
+    c.fillStyle = '#6fb0e8'; for (const [x, y] of [[54, 140], [204, 130], [62, 300], [196, 292]]) { c.beginPath(); c.moveTo(x, y - 13); c.quadraticCurveTo(x + 10, y + 2, x, y + 9); c.quadraticCurveTo(x - 10, y + 2, x, y - 13); c.fill(); }
+    T('AT LEAST 20 SECONDS', 334, 26, '#1d3550');
+  } else if (v === 'quiet') {
+    c.strokeStyle = '#a52020'; c.lineWidth = 14; c.beginPath(); c.arc(cx, 140, 92, 0, 6.2832); c.stroke();
+    T('QUIET', 140, 66, '#a52020'); T('PLEASE', 268, 46, '#222'); T('PATIENTS ARE RESTING', 310, 24, '#444');
+  } else if (v === 'eye') {
+    T('VISUAL ACUITY', 20, 24, '#444');
+    let y = 40; ['E', 'F P', 'T O Z', 'L P E D', 'P E C F D', 'E D F C Z P', 'F E L O P Z D', 'D E F P O T E C'].forEach((r, i) => { const px = Math.max(12, 70 - i * 9); T(r, y + px * .45, px, '#111'); y += px * .85 + 4; if (i === 5) { c.fillStyle = '#a52020'; c.fillRect(30, y - 2, w - 60, 2); } });
+  } else if (v === 'body') {
+    T('HUMAN ANATOMY', 22, 28, '#333');
+    c.fillStyle = '#cbb9a4'; c.strokeStyle = '#6a5a4a'; c.lineWidth = 2;
+    c.beginPath(); c.ellipse(cx, 72, 24, 28, 0, 0, 6.2832); c.fill(); c.stroke();
+    rrect(c, cx - 46, 104, 92, 128, 26); c.fill(); c.stroke();
+    for (const s of [-1, 1]) { c.save(); c.translate(cx + s * 54, 112); c.rotate(s * -.16); rrect(c, -12, 0, 24, 122, 12); c.fill(); c.stroke(); c.restore(); rrect(c, cx + s * 22 - 14, 226, 28, 118, 13); c.fill(); c.stroke(); }
+    c.fillStyle = '#d79a9a'; for (const s of [-1, 1]) { c.beginPath(); c.ellipse(cx + s * 20, 142, 17, 28, 0, 0, 6.2832); c.fill(); }
+    c.fillStyle = '#a52020'; c.beginPath(); c.ellipse(cx + 6, 152, 11, 13, .4, 0, 6.2832); c.fill();
+    c.fillStyle = '#8a5a3a'; c.beginPath(); c.ellipse(cx - 10, 188, 24, 12, 0, 0, 6.2832); c.fill();
+    c.fillStyle = '#c99a7a'; for (let i = 0; i < 5; i++) { c.beginPath(); c.ellipse(cx + Math.sin(i * 2) * 10, 204 + i * 5, 18, 4, 0, 0, 6.2832); c.fill(); }
+    c.strokeStyle = '#333'; c.lineWidth = 1; [[152, 'HEART', 1], [142, 'LUNG', -1], [188, 'LIVER', -1]].forEach(([y, s, sg]) => { c.beginPath(); c.moveTo(cx + sg * 14, y); c.lineTo(cx + sg * 84, y - 10); c.stroke(); textOn(c, s, cx + sg * 104, y - 12, 16, '#333'); });
+  } else if (v === 'hours') {
+    c.fillStyle = '#245a4a'; c.fillRect(0, 0, w, 64); T('VISITING HOURS', 34, 34, '#eef4f0');
+    [['MON - FRI', '14:00 - 20:00'], ['SAT - SUN', '10:00 - 18:00'], ['ICU', 'FAMILY ONLY']].forEach(([a, b], i) => { T(a, 100 + i * 56, 28, '#222'); T(b, 124 + i * 56, 26, '#444'); });
+    T('NO VISITORS AFTER 8 PM', 300, 22, '#7a1a1a');
+    c.save(); c.translate(cx, 250); c.rotate(-.2); textOn(c, 'THEY NEVER LEFT', 0, 0, 40, 'rgba(120,10,10,.85)'); c.restore();   // scrawled over it
+  } else {
+    T('MISSING', 40, 58, '#111');
+    const gr = c.createRadialGradient(cx, 150, 10, cx, 160, 100); gr.addColorStop(0, '#7d7a72'); gr.addColorStop(1, '#262626'); c.fillStyle = gr; c.fillRect(48, 76, 160, 170);
+    c.fillStyle = '#3a3a3a'; c.beginPath(); c.ellipse(cx, 250, 62, 34, 0, 0, 6.2832); c.fill();
+    c.fillStyle = '#0d0d0d'; c.beginPath(); c.ellipse(cx, 150, 35, 44, 0, 0, 6.2832); c.fill(); c.fillRect(cx - 35, 150, 16, 96); c.fillRect(cx + 19, 150, 16, 96);
+    c.fillStyle = '#b4aea2'; c.beginPath(); c.ellipse(cx, 158, 21, 29, 0, 0, 6.2832); c.fill();
+    c.fillStyle = '#000'; for (const s of [-1, 1]) { c.beginPath(); c.ellipse(cx + s * 9, 152, 5, 4, 0, 0, 6.2832); c.fill(); }
+    c.fillStyle = '#dcd7c8'; c.fillRect(0, 246, w, h - 246);
+    T('HAVE YOU SEEN HER?', 272, 26, '#222'); T('PATIENT 0413 - WARD B', 300, 22, '#444'); T('LAST SEEN: NIGHT SHIFT', 322, 20, '#444');
+  }
+  ageTex(c, w, h, 1.2);
+  c.fillStyle = 'rgba(232,222,170,.55)'; for (const [x, y] of [[0, 0], [w, 0], [0, h], [w, h]]) { c.save(); c.translate(x, y); c.rotate(x ? -.8 : .8); c.fillRect(-22, -8, 44, 16); c.restore(); }   // tape on the corners
+  c.save(); c.globalCompositeOperation = 'destination-out'; const tx = Math.random() < .5 ? 0 : w, ty = Math.random() < .5 ? 0 : h, sx = tx ? -1 : 1, sy = ty ? -1 : 1;
+  c.beginPath(); c.moveTo(tx, ty); c.lineTo(tx + sx * rnd(40, 80), ty); for (let k = 1; k < 6; k++) c.lineTo(tx + sx * rnd(10, 60) * (1 - k / 6), ty + sy * rnd(10, 70) * k / 6); c.lineTo(tx, ty + sy * rnd(50, 90)); c.closePath(); c.fill(); c.restore();   // one corner torn off
+}, 256, 360);
+function makePoster(v) {
+  const g = new THREE.Group(), m = new THREE.Mesh(new THREE.PlaneGeometry(.46, .65), new THREE.MeshLambertMaterial({ map: posterTex(v), alphaTest: .5 }));
+  m.position.z = .006; m.rotation.z = rnd(-.05, .05); g.add(m); return g;
+}
+const clockTex = v => plateTex('clock' + v, (c, w, h) => {
+  const r = w / 2; c.fillStyle = '#e8e4d8'; c.beginPath(); c.arc(r, r, r - 2, 0, 6.2832); c.fill();
+  c.strokeStyle = '#222'; for (let i = 0; i < 60; i++) { const a = i / 60 * 6.2832, l = i % 5 ? 4 : 10; c.lineWidth = i % 5 ? 1.5 : 3.5; c.beginPath(); c.moveTo(r + Math.sin(a) * (r - 8), r - Math.cos(a) * (r - 8)); c.lineTo(r + Math.sin(a) * (r - 8 - l), r - Math.cos(a) * (r - 8 - l)); c.stroke(); }
+  for (let i = 1; i <= 12; i++) { const a = i / 12 * 6.2832; textOn(c, String(i), r + Math.sin(a) * (r - 28), r - Math.cos(a) * (r - 28) + 1, 20, '#222'); }
+  const hand = (a, len, lw, col) => { c.strokeStyle = col; c.lineWidth = lw; c.lineCap = 'round'; c.beginPath(); c.moveTo(r - Math.sin(a) * 8, r + Math.cos(a) * 8); c.lineTo(r + Math.sin(a) * len, r - Math.cos(a) * len); c.stroke(); };
+  const [hh, mm] = [[3, 33], [11, 58], [4, 13]][v];               // every clock stopped at a different minute
+  hand((hh % 12 + mm / 60) / 12 * 6.2832, r * .5, 5, '#111'); hand(mm / 60 * 6.2832, r * .75, 3, '#111'); hand(rnd(0, 6.28), r * .8, 1.2, '#a52020');
+  c.fillStyle = '#111'; c.beginPath(); c.arc(r, r, 4, 0, 6.2832); c.fill();
+  c.strokeStyle = 'rgba(255,255,255,.6)'; c.lineWidth = 1; c.beginPath(); c.moveTo(r * .3, r * .25); c.lineTo(r * .9, r * .95); c.lineTo(r * 1.6, r * 1.2); c.moveTo(r * .9, r * .95); c.lineTo(r * .8, r * 1.7); c.stroke();   // cracked glass
+  ageTex(c, w, h, .5);
+}, 128, 128);
+function makeClock() {
+  const g = new THREE.Group(), add = meshAdder(g);
+  add(new THREE.CylinderGeometry(.19, .19, .05, 28), darkPlastic, 0, 0, .025, Math.PI / 2);
+  add(new THREE.CircleGeometry(.168, 28), new THREE.MeshLambertMaterial({ map: clockTex(Math.random() * 3 | 0) }), 0, 0, .0505);
+  return g;
+}
+const rubTex = plateTex('rub', (c, w, h) => { c.fillStyle = '#2c5d92'; c.fillRect(0, 0, w, h); textOn(c, 'HAND', w / 2, 13, 18, '#eef3f8'); textOn(c, 'RUB', w / 2, 29, 18, '#eef3f8'); }, 64, 40);
+function makeSanitizer() {
+  const g = new THREE.Group(), add = meshAdder(g), B = THREE.BoxGeometry;
+  add(new B(.12, .22, .09), plasticW, 0, 0, .046); add(new B(.1, .07, .02), plasticG, 0, -.035, .1); add(new B(.05, .03, .035), plasticG, 0, -.125, .07);
+  add(new THREE.PlaneGeometry(.08, .05), new THREE.MeshLambertMaterial({ map: rubTex }), 0, .055, .0915);
+  if (Math.random() < .5) add(new B(.1, .012, .08), plasticW, 0, -.42, .04);   // drip tray below
+  return g;
+}
+const bioTex = plateTex('bio', (c, w, h) => {
+  c.fillStyle = '#e8c93a'; c.fillRect(0, 0, w, h); const m = w / 2;
+  c.fillStyle = '#111'; for (let k = 0; k < 3; k++) { const a = k * 2.094 - 1.5708; c.beginPath(); c.arc(m + Math.cos(a) * 9, m + 2 + Math.sin(a) * 9, 11, 0, 6.2832); c.fill(); }
+  c.fillStyle = '#e8c93a'; for (let k = 0; k < 3; k++) { const a = k * 2.094 - 1.5708; c.beginPath(); c.arc(m + Math.cos(a) * 13, m + 2 + Math.sin(a) * 13, 8, 0, 6.2832); c.fill(); }
+  c.beginPath(); c.arc(m, m + 2, 4, 0, 6.2832); c.fill(); c.strokeStyle = '#111'; c.lineWidth = 2.5; c.beginPath(); c.arc(m, m + 2, 9, 0, 6.2832); c.stroke();
+  textOn(c, 'SHARPS', m, h - 7, 13, '#111');
+}, 64, 64);
+function makeSharps() {
+  const g = new THREE.Group(), add = meshAdder(g), B = THREE.BoxGeometry;
+  add(new B(.27, .03, .13), steelMat, 0, -.145, .065); add(new B(.24, .26, .12), sharpsRed, 0, 0, .065); add(new B(.25, .05, .13), sharpsLid, 0, .15, .065);
+  add(new B(.12, .012, .02), blackMat, 0, .176, .1);
+  add(new THREE.PlaneGeometry(.13, .13), new THREE.MeshLambertMaterial({ map: bioTex }), 0, 0, .1255);
+  return g;
+}
+const gasTex = plateTex('gas', (c, w, h) => {
+  c.fillStyle = '#c4c8c0'; c.fillRect(0, 0, w, h);
+  [[44, 'O2', '#2f8a46', '#fff'], [128, 'AIR', '#1a1a1a', '#fff'], [211, 'VAC', '#e0c23a', '#111']].forEach(([x, s, bg, fg]) => { c.fillStyle = bg; c.fillRect(x - 20, 3, 40, 16); textOn(c, s, x, 11, 16, fg); });
+  ageTex(c, w, h, .4);
+}, 256, 48);
+const tubeMat = new THREE.MeshLambertMaterial({ color: 0xc8e0d4, transparent: true, opacity: .55 });
+function makeGasPanel() {
+  const g = new THREE.Group(), add = meshAdder(g), B = THREE.BoxGeometry, C = THREE.CylinderGeometry;
+  add(new B(.95, .2, .04), lam(0xbfc3bb), 0, 0, .02); add(new THREE.PlaneGeometry(.92, .17), new THREE.MeshLambertMaterial({ map: gasTex }), 0, 0, .0405);
+  [[-.3, 0x2f8a46], [0, 0x1a1a1a], [.3, 0xe0c23a]].forEach(([x, col]) => { add(new C(.03, .03, .03, 14), steelMat, x, -.03, .055, Math.PI / 2); add(new C(.035, .035, .006, 14), lam(col), x, -.03, .043, Math.PI / 2); });
+  add(new C(.01, .01, .06, 8), steelMat, -.3, -.03, .09, Math.PI / 2); add(new C(.022, .022, .16, 12), tubeMat, -.3, .04, .125);           // O2 flowmeter
+  add(new C(.026, .026, .025, 12), lam(0x2f8a46), -.3, .13, .125); add(new C(.026, .026, .025, 12), lam(0x2f8a46), -.3, -.045, .125); add(new THREE.SphereGeometry(.012, 8, 6), plasticW, -.3, .07, .125);
+  const tube = new THREE.CatmullRomCurve3([[-.3, -.06, .125], [-.31, -.35, .14], [-.18, -.68, .15], [.04, -.6, .14], [.16, -.3, .12], [.3, -.09, .1]].map(p => new THREE.Vector3(...p)));
+  g.add(new THREE.Mesh(new THREE.TubeGeometry(tube, 40, .006, 5), tubeMat));                                                              // oxygen tubing hanging in a loop
+  add(new B(.12, .02, .1), steelMat, .3, -.27, .07); add(new C(.055, .055, .16, 14), tubeMat, .3, -.18, .1);                    // suction canister ...
+  add(new C(.05, .05, .07, 14), lam(0x3a0806), .3, -.225, .1); add(new C(.058, .058, .02, 14), lam(0x2a2a2a), .3, -.095, .1);                // ... half full of something dark
+  return g;
+}
+const filmTex = plateTex('film', (c, w, h) => {
+  c.fillStyle = '#e6eef4'; c.fillRect(0, 0, w, h);
+  const film = (x0, draw) => { c.fillStyle = '#0a0e13'; c.fillRect(x0, 10, 116, 160); c.save(); c.beginPath(); c.rect(x0, 10, 116, 160); c.clip(); c.translate(x0 + 58, 90); draw(); c.restore(); };
+  const bone = a => `rgba(214,226,236,${a})`;
+  film(8, () => {                                                     // chest film: spine, ribs, heart shadow
+    c.fillStyle = 'rgba(60,70,82,.6)'; for (const s of [-1, 1]) { c.beginPath(); c.ellipse(s * 26, 0, 22, 52, 0, 0, 6.2832); c.fill(); }
+    c.fillStyle = bone(.55); c.beginPath(); c.ellipse(8, 22, 20, 18, .3, 0, 6.2832); c.fill();
+    c.strokeStyle = bone(.85); c.lineWidth = 5; c.beginPath(); c.moveTo(0, -80); c.lineTo(0, 80); c.stroke();
+    c.lineWidth = 3; for (let i = 0; i < 9; i++) { const y = -56 + i * 13; for (const s of [-1, 1]) { c.beginPath(); c.moveTo(s * 3, y); c.quadraticCurveTo(s * 58, y - 14, s * 50, y + 20); c.stroke(); } }
+    c.lineWidth = 4; for (const s of [-1, 1]) { c.beginPath(); c.moveTo(s * 4, -66); c.lineTo(s * 50, -72); c.stroke(); }
+  });
+  film(132, () => {                                                   // skull film
+    c.strokeStyle = bone(.85); c.fillStyle = bone(.18); c.lineWidth = 5; c.beginPath(); c.ellipse(0, -18, 44, 52, 0, 0, 6.2832); c.fill(); c.stroke();
+    c.fillStyle = '#0a0e13'; for (const s of [-1, 1]) { c.beginPath(); c.ellipse(s * 17, -10, 12, 13, 0, 0, 6.2832); c.fill(); } c.beginPath(); c.moveTo(0, 6); c.lineTo(-6, 20); c.lineTo(6, 20); c.fill();
+    c.lineWidth = 4; c.beginPath(); c.moveTo(-34, 20); c.quadraticCurveTo(0, 74, 34, 20); c.stroke();
+    c.lineWidth = 2; for (let i = -4; i <= 4; i++) { c.beginPath(); c.moveTo(i * 5, 28); c.lineTo(i * 5, 38); c.stroke(); }
+  });
+  ageTex(c, w, h, .4);
+}, 256, 180);
+function makeLightbox(lit) {
+  const g = new THREE.Group(), add = meshAdder(g);
+  add(new THREE.BoxGeometry(.74, .54, .08), lam(0xc9ccc4), 0, 0, .04);
+  const mat = lit ? new THREE.MeshBasicMaterial({ map: filmTex, color: 0xbcd4e8 }) : new THREE.MeshLambertMaterial({ map: filmTex, color: 0x6a6e70 });
+  add(new THREE.PlaneGeometry(.66, .46), mat, 0, 0, .0805); add(new THREE.BoxGeometry(.66, .025, .015), steelMat, 0, .215, .088);
+  if (lit) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0x9cc4ff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: .22 })); sp.scale.set(1.5, 1.2, 1); sp.position.z = .25; g.add(sp); flickers.push({ mat, sp, ph: rnd(0, 100) }); }
+  return g;
+}
+const aedTex = plateTex('aed', (c, w, h) => {
+  c.fillStyle = '#e9ece6'; c.fillRect(0, 0, w, h); c.fillStyle = '#1f8a4c'; c.fillRect(0, 0, w, 40); textOn(c, 'AED', w / 2, 21, 34, '#fff');
+  c.fillStyle = '#1f8a4c'; c.beginPath(); c.moveTo(64, 98); c.bezierCurveTo(30, 74, 36, 50, 64, 62); c.bezierCurveTo(92, 50, 98, 74, 64, 98); c.fill();
+  c.fillStyle = '#fff'; c.beginPath(); c.moveTo(68, 54); c.lineTo(56, 74); c.lineTo(64, 74); c.lineTo(58, 90); c.lineTo(74, 68); c.lineTo(66, 68); c.lineTo(72, 54); c.fill();
+  c.fillStyle = '#20262a'; c.fillRect(18, 106, 92, 42); c.fillStyle = '#d06a24'; rrect(c, 34, 112, 60, 32, 6); c.fill();
+  textOn(c, 'DEFIBRILLATOR', w / 2, 154, 14, '#333'); ageTex(c, w, h, .5);
+}, 128, 160);
+function makeAED() {
+  const g = new THREE.Group(), add = meshAdder(g);
+  add(new THREE.BoxGeometry(.4, .5, .13), plasticW, 0, 0, .065); add(new THREE.PlaneGeometry(.36, .45), new THREE.MeshLambertMaterial({ map: aedTex }), 0, 0, .1305);
+  add(new THREE.BoxGeometry(.025, .12, .025), plasticG, .17, 0, .14);
+  return g;
+}
+const DEPTS = ['RADIOLOGY', 'PHARMACY', 'INTENSIVE CARE', 'SURGERY', 'LABORATORY', 'PEDIATRICS', 'PSYCHIATRY', 'MORGUE', 'ONCOLOGY', 'ISOLATION'];
+const deptTex = n => plateTex('dept' + n, (c, w, h) => {
+  c.fillStyle = '#e4e2d8'; c.fillRect(0, 0, w, h); c.fillStyle = '#1f3d66'; c.fillRect(0, 0, 58, h);
+  c.fillStyle = '#e4e2d8'; c.fillRect(23, 14, 12, 36); c.fillRect(11, 26, 36, 12);                                   // medical cross
+  textOn(c, DEPTS[n], 66, h / 2 + 1, n === 2 ? 30 : 36, '#1f3d66', 'left'); ageTex(c, w, h, .6);
+}, 256, 64);
+function makeDeptSign(n) {
+  const g = new THREE.Group(), add = meshAdder(g);
+  add(new THREE.BoxGeometry(.86, .22, .025), doorFrameMat, 0, 0, .0125); add(new THREE.PlaneGeometry(.82, .2), new THREE.MeshLambertMaterial({ map: deptTex(n) }), 0, 0, .026);
+  if (Math.random() < .25) g.rotation.z = rnd(.12, .3) * (Math.random() < .5 ? -1 : 1);                               // a screw came loose
+  return g;
+}
+function makeGloveRack() {
+  const g = new THREE.Group(), add = meshAdder(g), B = THREE.BoxGeometry;
+  add(new B(.52, .015, .11), steelMat, 0, -.075, .055); add(new B(.52, .012, .012), steelMat, 0, .03, .11);
+  [0x5a6fc2, 0x7a4fae, 0xe2e0d8].forEach((col, i) => {
+    const x = -.17 + i * .17; add(new B(.15, .13, .09), lam(col), x, 0, .05); add(new B(.07, .018, .004), blackMat, x, .035, .0955);
+    if (Math.random() < .8) add(new B(.045, .035, .02), lam(i === 2 ? 0xd8d6cc : col + 0x202020), x, .05, .1, .3, 0, rnd(-.4, .4));   // a glove poking out
+  });
+  return g;
+}
+const keypadTex = plateTex('keys', (c, w, h) => { c.fillStyle = '#a89d84'; c.fillRect(0, 0, w, h); c.fillStyle = '#e6e0d0'; for (let r = 0; r < 4; r++) for (let k = 0; k < 3; k++) { rrect(c, 6 + k * 18, 6 + r * 18, 14, 13, 3); c.fill(); } }, 64, 80);
+function makePhone() {                     // wall phone with its handset hanging off the hook on a coiled cord
+  const g = new THREE.Group(), add = meshAdder(g), B = THREE.BoxGeometry;
+  add(new B(.16, .25, .07), beigeMat, 0, 0, .035); add(new THREE.PlaneGeometry(.08, .1), new THREE.MeshLambertMaterial({ map: keypadTex }), 0, -.04, .0705);
+  add(new B(.05, .08, .03), lam(0x9d9378), 0, .08, .085);
+  const hs = new THREE.Group(); hs.position.set(.03, -.66, .07); hs.rotation.z = .25; g.add(hs);
+  const ha = meshAdder(hs); ha(new B(.04, .17, .03), beigeMat, 0, 0, 0); ha(new B(.06, .05, .045), beigeMat, 0, .09, .01); ha(new B(.06, .05, .045), beigeMat, 0, -.09, .01);
+  const a = new THREE.Vector3(0, -.13, .06), b = new THREE.Vector3(.055, -.55, .07), pts = [];
+  for (let i = 0; i <= 50; i++) { const t = i / 50, p = a.clone().lerp(b, t); p.y -= Math.sin(t * Math.PI) * .05; p.x += Math.cos(t * 30) * .012; p.z += Math.sin(t * 30) * .012; pts.push(p); }
+  g.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 120, .0035, 4), darkPlastic));
+  return g;
+}
+const curtainTex = plateTex('curtain', (c, w, h) => {
+  c.fillStyle = '#8fa898'; c.fillRect(0, 0, w, h); for (let x = 0; x < w; x += 8) { c.fillStyle = 'rgba(255,255,255,.06)'; c.fillRect(x, 0, 3, h); }
+  stains(c, w, h, 8, 'rgba(60,50,30,.3)'); for (let i = 0; i < 4; i++) { const x = rnd(4, 60), y = rnd(h * .65, h * .95), gr = c.createRadialGradient(x, y, 0, x, y, rnd(6, 14)); gr.addColorStop(0, blood(.7)); gr.addColorStop(1, blood(0)); c.fillStyle = gr; c.fillRect(x - 16, y - 16, 32, 32); }
+  grain(c, w, h, 600, .06);
+}, 64, 256);
+const curtainMat = new THREE.MeshLambertMaterial({ map: curtainTex, side: THREE.DoubleSide });
+function makeCurtain() {                   // a privacy curtain pushed back against the wall on its ceiling track
+  const g = new THREE.Group(), add = meshAdder(g), cw = rnd(.6, .9);
+  add(new THREE.BoxGeometry(1.4, .03, .04), steelMat, 0, WH - .05, .13);
+  const geo = new THREE.PlaneGeometry(cw, 2.55, 36, 4), p = geo.attributes.position;
+  for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i), k = (1.275 - y) / 2.55; p.setX(i, x * (1 + k * .25)); p.setZ(i, .085 + Math.sin(x * 46) * (.03 + k * .015)); }
+  geo.computeVertexNormals();
+  const m = new THREE.Mesh(geo, curtainMat); m.position.set(rnd(-.3, .3), WH - .07 - 1.275, 0); g.add(m);
+  for (let i = 0; i < 6; i++) add(new THREE.TorusGeometry(.012, .003, 4, 8), steelMat, m.position.x - cw / 2 + i * cw / 5, WH - .06, .13);
+  return g;
+}
+const staticTex = canvasTex(128, 128, (c, w, h) => { const im = c.createImageData(w, h); for (let i = 0; i < w * h; i++) { const v = Math.random() * 255 * ((i / w | 0) % 2 ? .7 : 1) | 0; im.data[i * 4] = im.data[i * 4 + 1] = im.data[i * 4 + 2] = v; im.data[i * 4 + 3] = 255; } c.putImageData(im, 0, 0); });
+staticTex.magFilter = staticTex.minFilter = THREE.NearestFilter; staticTex.repeat.set(.5, .5);
+const staticMat = new THREE.MeshBasicMaterial({ map: staticTex, color: 0x868c88 });
+function makeTV(on) {                      // wall-bracket TV up near the ceiling; some still hiss with static
+  const g = new THREE.Group(), add = meshAdder(g);
+  add(new THREE.BoxGeometry(.14, .14, .02), steelMat, 0, 0, .01); add(new THREE.BoxGeometry(.04, .04, .2), steelMat, 0, 0, .11);
+  const tv = new THREE.Group(); tv.position.set(0, -.04, .25); tv.rotation.x = .2; g.add(tv); const ta = meshAdder(tv);
+  ta(new THREE.BoxGeometry(.58, .38, .08), darkPlastic, 0, 0, 0); ta(new THREE.PlaneGeometry(.5, .3), on ? staticMat : glassDark, 0, .01, .0405);
+  if (on) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xb8c8d0, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: .16 })); sp.scale.set(1.3, 1, 1); sp.position.z = .2; tv.add(sp); }
+  return g;
+}
+let flickers = [];                          // lit x-ray viewers that buzz and flicker (animated in render)
+function addWallProps(L, pick, anchor) {    // called from buildDressing for each floor, before the handrails take the remaining wall faces
+  const y0 = L * FH, put = (g, c, y, lat = rnd(-.8, .8)) => { const a = anchor(c, 0, lat); g.position.set(a.x, y0 + y, a.z); g.rotation.y = a.ry; propGroup.add(g); setFloor(g, L); };
+  pick(L, 5, 4, 2).forEach(c => put(makeSanitizer(), c, 1.25));
+  pick(L, 2, 7, 2).forEach(c => put(makeClock(), c, 2.35, rnd(-.4, .4)));
+  shuffle(POSTERS.slice()).slice(0, 5).forEach(v => { const c = pick(L, 1, 4, 2)[0]; if (c) put(makePoster(v), c, rnd(1.4, 1.65)); });
+  pick(L, 2, 6, 2).forEach(c => put(makeSharps(), c, 1.15));
+  pick(L, 3, 5, 2).forEach(c => put(makeGasPanel(), c, 1.45, rnd(-.5, .5)));
+  pick(L, 2, 7, 2).forEach((c, i) => put(makeLightbox(i === 0 || Math.random() < .4), c, 1.6, rnd(-.5, .5)));
+  pick(L, 1, 8, 2).forEach(c => put(makeAED(), c, 1.3));
+  const dn = shuffle([...DEPTS.keys()]); pick(L, 3, 6, 2).forEach((c, i) => put(makeDeptSign(dn[i]), c, 2.1, rnd(-.4, .4)));
+  pick(L, 2, 6, 2).forEach(c => put(makeGloveRack(), c, 1.35));
+  pick(L, 1, 9, 2).forEach(c => put(makePhone(), c, 1.45));
+  pick(L, 3, 5, 2).forEach(c => put(makeCurtain(), c, 0, 0));
+  pick(L, 2, 7, 2).forEach((c, i) => put(makeTV(i === 0 || Math.random() < .5), c, 2.55, rnd(-.4, .4)));
+}
 function buildDressing() {
+  flickers = [];
   const key = (L, x, z) => L + ',' + x + ',' + z, used = propUsed, isStair = (x, z) => stairs.some(s => [s.r1, s.r2].some(t => t.x === x && t.z === z));
   const pick = (L, n, gap, near) => { const out = []; for (const c of wallSpots(L)) { if (out.length >= n) break; if (used.has(key(L, c.x, c.z)) || nearRes(L, c.x, c.z, near) || out.some(o => Math.abs(o.x - c.x) + Math.abs(o.z - c.z) < gap)) continue; out.push(c); used.add(key(L, c.x, c.z)); } return out; };
   const anchor = (c, depth, lat) => { const [dx, dz] = c.d, c0 = center(c); return { x: c0.x + dx * (S / 2 - depth) - dz * lat, z: c0.z + dz * (S / 2 - depth) + dx * lat, ry: Math.atan2(-dx, -dz) }; };
@@ -644,6 +888,30 @@ function buildDressing() {
     pick(L, 2, 5, 3).forEach(c => { const a = anchor(c, 0, rnd(-.8, .8)), g = makeExtinguisher(); g.position.set(a.x, y0 + 1.05, a.z); g.rotation.y = a.ry; propGroup.add(g); setFloor(g, L); });          // fire extinguishers
     pick(L, 2, 5, 3).forEach((c, i) => { const a = anchor(c, 0, rnd(-.6, .6)), g = makeBoard(i + L * 2); g.position.set(a.x, y0 + 1.6, a.z); g.rotation.y = a.ry; propGroup.add(g); setFloor(g, L); });     // notice boards
     pick(L, 1, 8, 3).forEach(c => { const a = anchor(c, .6, rnd(-.7, .7)), g = makeIV(), ry = rnd(0, 6.28); g.position.set(a.x, y0, a.z); g.rotation.y = ry; propGroup.add(g); setFloor(g, L); props.push({ L, x0: a.x - .3, x1: a.x + .3, z0: a.z - .3, z1: a.z + .3 }); });   // IV stands
+    addWallProps(L, pick, anchor);
+    let nsm = 0, npo = 0, nde = 0, npr = 0;
+    for (const c of wallSpots(L)) {          // bloody handprints dragged down a few walls (decals, they may share a wall face with other props)
+      if (nsm >= 9) break; if (nearRes(L, c.x, c.z, 2) || used.has(key(L, c.x, c.z)) || Math.random() > .5) continue;
+      const a = anchor(c, .004, rnd(-1.2, 1.2)); putInst(d.smears, nsm++, a.x, y0 + rnd(.85, 1.45), a.z, 0, a.ry, rnd(-.3, .3));
+    }
+    for (const c of shuffle(allCells.filter(q => q.L === L && !nearRes(L, q.x, q.z, 1)))) {     // floor: blood pools with drag trails, spilled pills / gloves / syringes
+      const q = center(c);
+      if (npo < 7) putInst(d.pools, npo++, q.x + rnd(-1.2, 1.2), y0 + .016, q.z + rnd(-1.2, 1.2), 0, rnd(0, 6.28));
+      else if (nde < 12) putInst(d.debris, nde++, q.x + rnd(-1.4, 1.4), y0 + .017, q.z + rnd(-1.4, 1.4), 0, rnd(0, 6.28));
+      else break;
+    }
+    const isOpen = (x, z) => !grids[L][z][x];
+    const straight = [];
+    for (let z = 1; z < W - 1; z++) for (let x = 1; x < W - 1; x++) {
+      if (!isOpen(x, z) || isStair(x, z) || nearRes(L, x, z, 2)) continue;
+      const hz = isOpen(x - 1, z) && isOpen(x + 1, z) && !isOpen(x, z - 1) && !isOpen(x, z + 1), vz = isOpen(x, z - 1) && isOpen(x, z + 1) && !isOpen(x - 1, z) && !isOpen(x + 1, z);
+      if (hz || vz) straight.push({ x, z, hz });
+    }
+    for (const s of shuffle(straight).slice(0, 5)) {    // bare bloody footprints along a few straight corridors
+      const q = center(s), o = rnd(-.9, .9); putInst(d.prints, npr++, q.x + (s.hz ? 0 : o), y0 + .018, q.z + (s.hz ? o : 0), 0, (s.hz ? Math.PI / 2 : 0) + (Math.random() < .5 ? Math.PI : 0));
+    }
+    d.smears.count = nsm; d.pools.count = npo; d.debris.count = nde; d.prints.count = npr;
+    [d.smears, d.pools, d.debris, d.prints].forEach(m => m.instanceMatrix.needsUpdate = true);
     for (const c of wallSpots(L)) {          // handrails along ~30% of free wall faces (no collision, 6 cm deep)
       if (nr >= 240) break; if (used.has(key(L, c.x, c.z)) || nearRes(L, c.x, c.z, 1) || Math.random() > .3) continue;
       const [dx, dz] = c.d, c0 = center(c); putInst(d.rails, nr++, c0.x + dx * (S / 2 - .06), y0 + .92, c0.z + dz * (S / 2 - .06), 0, Math.atan2(-dx, -dz));
@@ -667,8 +935,8 @@ function buildDressing() {
 const housingGeo = new THREE.BoxGeometry(1.3, .07, .24), tubeGeo = new THREE.BoxGeometry(1.2, .04, .1), chainGeo = new THREE.CylinderGeometry(.008, .008, .38, 4);
 const housingMat = new THREE.MeshLambertMaterial({ color: 0x55584f }), chainMat = new THREE.MeshLambertMaterial({ color: 0x2a2a28 });
 const poolGeo = (() => { const g = new THREE.PlaneGeometry(3.6, 3.6); g.rotateX(-Math.PI / 2); return g; })();
-const lampPools = [0, 1].map(L => [0, 1, 2, 3].map(() => { const l = new THREE.PointLight(0xdcf0dc, 0, 7.5, 2); l.layers.set(FL(L)); scene.add(l); return l; }));   // 4 real lamp lights per floor
-const dummyLight = new THREE.PointLight(0x000000, 0, 1); dummyLight.layers.set(FL(0)); scene.add(dummyLight);   // keeps both passes at the same light count (no shader recompiles)
+const lampPools = [0, 1].map(L => [0, 1, 2, 3].map(() => { const l = new THREE.PointLight(0xdcf0dc, 0, 7.5, 2); l.layers.set(FL(L)); l.layers.enable(GL(L)); scene.add(l); return l; }));   // 4 real lamp lights per floor
+const dummyLight = new THREE.PointLight(0x000000, 0, 1); dummyLight.layers.set(FL(0)); dummyLight.layers.enable(GL(0)); scene.add(dummyLight);   // keeps both passes at the same light count (no shader recompiles)
 function buildLamps() {
   lamps = []; clearG(lampGroup);
   for (let L = 0; L < 2; L++) {
@@ -692,31 +960,88 @@ function buildLamps() {
 }
 
 // ================= [2 PLAYER] player body / arms =================
-const skin = new THREE.MeshLambertMaterial({ color: 0xe0b090 }), cloth = new THREE.MeshLambertMaterial({ color: 0x2b4a6b });
-const cuffMat = new THREE.MeshLambertMaterial({ color: 0x1d3349 }), pants = new THREE.MeshLambertMaterial({ color: 0x2a2a33 });
-const body = new THREE.Group();
-const torso = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.75, 0.28), cloth); torso.position.set(0, 1.12, 0.2);
-const legs = [-1, 1].map(s => { const l = new THREE.Group(); l.position.set(s * 0.13, 0.78, 0.18); const m = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.78, 0.22), pants); m.position.y = -0.39; l.add(m); body.add(l); return l; });
-body.add(torso); scene.add(body);
+const skin = new THREE.MeshStandardMaterial({ color: 0xd8a788, roughness: .72 }), cloth = new THREE.MeshStandardMaterial({ color: 0x2b4a6b, roughness: .95 });
+const cuffMat = new THREE.MeshStandardMaterial({ color: 0x1d3349, roughness: .95 }), pants = new THREE.MeshStandardMaterial({ color: 0x2a2a33, roughness: .9 });
+const shoeMat = new THREE.MeshStandardMaterial({ color: 0x141414, roughness: .6 });
+const torchMat = new THREE.MeshStandardMaterial({ color: 0x26282b, metalness: .7, roughness: .4 }), torchGrip = new THREE.MeshStandardMaterial({ color: 0x0c0c0d, roughness: .9 }), lensMat = new THREE.MeshBasicMaterial({ color: 0xfff2d8 });
+const limb = (rt, rb, len, mat, seg = 14) => { const g = new THREE.CylinderGeometry(rt, rb, len, seg); g.translate(0, -len / 2, 0); return new THREE.Mesh(g, mat); };   // hangs down from its origin
+const ellip = (r, mat, sx = 1, sy = 1, sz = 1) => { const m = new THREE.Mesh(new THREE.SphereGeometry(r, 16, 12), mat); m.scale.set(sx, sy, sz); return m; };
+const at = (o, x, y, z) => { o.position.set(x, y, z); return o; };
+function capsule(a, b, r0, r1, mat) {      // tapered segment between two points with rounded ends (fingers, thumb)
+  const g = new THREE.Group(), d = b.clone().sub(a), m = limb(r0, r1, d.length(), mat, 10);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), d.clone().normalize()); m.position.copy(a);
+  g.add(m, at(ellip(r0, mat), a.x, a.y, a.z), at(ellip(r1, mat), b.x, b.y, b.z)); return g;
+}
 
-const rig = new THREE.Group(); camera.add(rig);
-const arms = [-1, 1].map(s => {
-  const sh = new THREE.Group(); sh.rotation.order = 'YXZ'; sh.position.set(s * .3, -.2, -.02); sh.rotation.z = s * .12;
-  const box = (w, h, d, mat, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); return m; };
-  sh.add(box(.1, .3, .1, cloth, 0, -.15, 0));
-  const el = new THREE.Group(); el.position.y = -.3; sh.add(el);
-  el.add(box(.085, .28, .085, cloth, 0, -.14, 0), box(.098, .045, .098, cuffMat, 0, -.27, 0));
-  const hand = new THREE.Group(); hand.position.y = -.3; el.add(hand);
-  hand.add(box(.08, .1, .04, skin, 0, -.05, 0), box(.075, .06, .035, skin, 0, -.12, -.01), box(.028, .07, .03, skin, -s * .05, -.04, -.01));
-  hand.rotation.x = -.15;
-  rig.add(sh); return { sh, el, hand, s };
+// lower body (seen when looking down): rounded jacket + hips, legs with knees and shoes
+const body = new THREE.Group();
+const torso = new THREE.Group(); torso.position.set(0, .93, .16); body.add(torso);
+torso.add(at(ellip(.5, cloth, .44, .6, .26), 0, .28, 0), at(ellip(.5, pants, .38, .22, .24), 0, 0, 0));
+const legs = [-1, 1].map(s => {
+  const hip = new THREE.Group(); hip.position.set(s * .1, .92, .16); body.add(hip); hip.add(limb(.085, .066, .44, pants));
+  const knee = new THREE.Group(); knee.position.y = -.44; hip.add(knee); knee.add(ellip(.068, pants), limb(.064, .05, .42, pants));
+  const ankle = new THREE.Group(); ankle.position.y = -.42; knee.add(ankle); ankle.add(at(ellip(.5, shoeMat, .11, .08, .27), 0, -.03, -.06));
+  return { hip, knee, ankle };
 });
+scene.add(body);
+
+// first-person arms: tapered sleeves with elbows and cuffs; the right hand grips a torch aimed down the corridor, the left hangs low and swings into view when running
+const rig = new THREE.Group(); camera.add(rig);
+const ARM_U = .28, ARM_F = .25, SH = [new THREE.Vector3(-.2, -.3, .1), new THREE.Vector3(.2, -.3, .1)];
+function armIK(sh, wrist) {                // two-bone IK in the arm's own vertical plane (elbow below): yaw, shoulder pitch, elbow bend
+  const d = wrist.clone().sub(sh), h = Math.hypot(d.x, d.z), r = Math.min(ARM_U + ARM_F - 1e-3, d.length());
+  const g = Math.acos((ARM_U ** 2 + ARM_F ** 2 - r * r) / (2 * ARM_U * ARM_F)), b = Math.acos((ARM_U ** 2 + r * r - ARM_F ** 2) / (2 * ARM_U * r));
+  return { yaw: Math.atan2(-d.x, -d.z), a: Math.atan2(h, -d.y) - b, e: Math.PI - g };
+}
+const POSE = { R: armIK(SH[1], new THREE.Vector3(.17, -.26, -.36)), L: armIK(SH[0], new THREE.Vector3(-.21, -.58, -.2)), Lrun: armIK(SH[0], new THREE.Vector3(-.21, -.36, -.32)) };
+function makeArm(s) {
+  const sh = new THREE.Group(); sh.rotation.order = 'YXZ'; sh.position.copy(SH[s > 0 ? 1 : 0]); rig.add(sh);
+  sh.add(ellip(.062, cloth), limb(.06, .05, ARM_U, cloth));
+  const el = new THREE.Group(); el.position.y = -ARM_U; sh.add(el);
+  el.add(ellip(.052, cloth), limb(.05, .041, ARM_F - .02, cloth), at(limb(.047, .046, .035, cuffMat), 0, -(ARM_F - .045), 0));
+  const hand = new THREE.Group(); hand.position.y = -ARM_F; el.add(hand); hand.add(at(limb(.032, .029, .05, skin), 0, .012, 0));   // wrist
+  return { sh, el, hand, s };
+}
+function makeOpenHand(s) {                 // relaxed hand in wrist space: fingers along -y, palm toward +z, thumb on the inner side
+  const g = new THREE.Group(), V = (x, y, z) => new THREE.Vector3(x, y, z);
+  g.add(at(ellip(.5, skin, .08, .095, .034), 0, -.058, 0));
+  [[.045, .028, .022], [.05, .031, .024], [.047, .029, .023], [.037, .024, .02]].forEach((ls, i) => {   // index .. little finger, each gently curled toward the palm
+    let p = V(-s * (1.5 - i) * .0185, -.1 + (i === 0 || i === 3 ? .006 : 0), 0), a = 1.0 + i * .08, sp = -s * (i - 1.5) * .03;
+    ls.forEach((L, j) => { const q = p.clone().add(V(Math.sin(sp) * L, -Math.cos(a) * L, Math.sin(a) * L)); g.add(capsule(p, q, .0098 - j * .001, .009 - j * .001, skin)); p = q; a += .9; });   // loosely closed, like a hand swinging as you run
+  });
+  const t0 = V(-s * .036, -.03, .01), t1 = V(-s * .05, -.066, .032), t2 = V(-s * .03, -.092, .05);   // thumb folded over the curled fingers
+  g.add(capsule(t0, t1, .013, .011, skin), capsule(t1, t2, .011, .0095, skin));
+  return g;
+}
+const arms = [-1, 1].map(makeArm), [armL, armR] = arms;
+armL.hand.add(makeOpenHand(-1)); armL.hand.children[1].scale.setScalar(.92); armL.el.rotation.y = 1.5;                                 // forearm turned so the palm faces inward (thumb up)
+function setRestPose() { armR.sh.rotation.set(POSE.R.a, POSE.R.yaw, 0); armR.el.rotation.x = POSE.R.e; armL.sh.rotation.set(POSE.L.a, POSE.L.yaw, 0); armL.el.rotation.x = POSE.L.e; }
+const torch = (() => {                     // fist + torch built in camera space at the rest pose (barrel aimed far ahead), then attached to the right hand so it follows every motion
+  setRestPose(); camera.updateMatrixWorld(true);
+  const W = rig.worldToLocal(armR.hand.getWorldPosition(new THREE.Vector3())), E = rig.worldToLocal(armR.el.getWorldPosition(new THREE.Vector3()));
+  const fdir = W.clone().sub(E).normalize(), bdir = new THREE.Vector3(0, -.12, -7).sub(W).normalize();
+  const yb = fdir.clone().addScaledVector(bdir, -fdir.dot(bdir)).normalize(), zb = bdir.clone().negate(), xb = new THREE.Vector3().crossVectors(yb, zb).normalize();
+  const fist = new THREE.Group(); fist.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(xb, yb, zb)); fist.position.copy(W).addScaledVector(yb, .045).addScaledVector(bdir, .012); rig.add(fist);
+  const add = meshAdder(fist), C = THREE.CylinderGeometry, R = Math.PI / 2, V = (x, y, z) => new THREE.Vector3(x, y, z);
+  add(new C(.0185, .0185, .17, 16), torchGrip, 0, 0, -.055, R); add(new C(.02, .027, .055, 18), torchMat, 0, 0, -.1675, R); add(new C(.02, .02, .025, 16), torchMat, 0, 0, .04, R);   // grip (held near the tail), head, tail cap
+  add(new THREE.TorusGeometry(.025, .003, 6, 18), torchMat, 0, 0, -.195); add(new THREE.CircleGeometry(.023, 18), lensMat, 0, 0, -.1955, 0, Math.PI, 0);              // bezel + lit lens
+  add(new THREE.BoxGeometry(.006, .012, .04), torchMat, 0, .021, -.085);                                                                                        // switch
+  [[-.031, .0105, .029], [-.011, .011, .03], [.009, .0105, .0295], [.028, .0092, .0275]].forEach(([z, t, r]) => {                                                // four fingers curled under the barrel, tips on the inner side
+    add(new THREE.TorusGeometry(r, t, 8, 18, 3.4), skin, 0, -.002, z, 0, 0, 2.75);
+    add(new THREE.SphereGeometry(t, 10, 8), skin, Math.cos(2.75) * r, Math.sin(2.75) * r - .002, z); add(new THREE.SphereGeometry(t * 1.2, 10, 8), skin, Math.cos(6.15) * r * 1.05, Math.sin(6.15) * r - .002, z);   // fingertip, knuckle
+  });
+  fist.add(at(ellip(.5, skin, .044, .07, .094), .025, -.026, .004), at(ellip(.5, skin, .05, .045, .06), .008, -.045, .014));   // back of the hand / heel of the palm, down to the wrist
+  fist.children[fist.children.length - 2].rotation.z = .55;
+  fist.add(capsule(V(.024, .012, .036), V(.008, .028, .01), .0125, .011, skin), capsule(V(.008, .028, .01), V(-.012, .024, -.012), .011, .0095, skin));         // thumb folded over the top of the barrel
+  const lens = new THREE.Object3D(); lens.position.z = -.2; const aim = new THREE.Object3D(); aim.position.z = -1.2; fist.add(lens, aim);
+  armR.hand.attach(fist); return { fist, lens, aim };
+})();
 const flash = new THREE.SpotLight(0xfff0d0, 1.8, 30, 0.5, 0.6, 1.2);
-const flT = new THREE.Object3D(); flT.position.z = -1; camera.add(flash, flT); flash.target = flT;
+const flT = new THREE.Object3D(); flT.position.z = -1; camera.add(flash, flT); flash.target = flT;   // moved to the torch lens every frame (render)
 const camLight = new THREE.PointLight(0xffe8c0, 0.5, 6); camera.add(camLight);
-[flash, camLight].forEach(l => { l.layers.set(FL(0)); l.layers.enable(FL(1)); });   // flashlight lights both floors
+[flash, camLight].forEach(l => { l.layers.set(FL(0)); [FL(1), GL(0), GL(1)].forEach(n => l.layers.enable(n)); });   // flashlight lights both floors (and the ghost / player passes)
 let bodyFloor = -1;
-function syncPlayerFloor() { if (bodyFloor !== P.level) { setFloor(body, P.level); setFloor(rig, P.level); bodyFloor = P.level; } }
+function syncPlayerFloor() { if (bodyFloor !== P.level) { setActorLayer(body, P.level); setActorLayer(rig, P.level); bodyFloor = P.level; } }   // drawn in the last pass, so Ghost Sight never paints over your own arms
 
 // ================= [4 GHOST AI] ghost models (two + black ghost) =================
 const glowTex = (() => {
@@ -726,27 +1051,277 @@ const glowTex = (() => {
 })();
 const shadowTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d'); const gr = x.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(0,0,0,.9)'); gr.addColorStop(.55, 'rgba(0,0,0,.5)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = gr; x.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c); })();
 const shadowGeo = (() => { const g = new THREE.PlaneGeometry(1, 1); g.rotateX(-Math.PI / 2); return g; })();
+// ---- face texture: primitives are plain data, so the same drawing can be reproduced for a preview image ----
+function facePrims(w, h, dark) {
+  let sd = dark ? 77 : 31; const rand = () => { sd = (sd + 0x6D2B79F5) | 0; let t = Math.imul(sd ^ (sd >>> 15), 1 | sd); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const C = dark ? { edge: '#141418', mid: '#23232a', hi: '#33333b', top: '#3c3c45', hollow: '#000000', halo: 'rgba(0,0,0,.6)', halo2: 'rgba(0,0,0,.35)', cheek: 'rgba(0,0,0,.25)', nose: 'rgba(0,0,0,.45)', mouth: '#000000', lip: '#101014', tooth: '#c9d2da', crack: 'rgba(0,0,0,.6)',
+                   blot: 'rgba(0,0,0,.16)', blot2: 'rgba(70,70,84,.1)', vein: 'rgba(0,0,0,.4)', bruise: 'rgba(0,0,0,.4)', blood: '#010102', blood2: 'rgba(0,0,0,.55)', gum: '#0a0a0d' }
+                 : { edge: '#8a8275', mid: '#b4ac9d', hi: '#cdc6b8', top: '#ddd7ca', hollow: '#0a0807', halo: 'rgba(30,26,24,.4)', halo2: 'rgba(40,34,30,.25)', cheek: 'rgba(60,54,48,.2)', nose: 'rgba(70,62,54,.5)', mouth: '#120807', lip: '#4a2420', tooth: '#d9d3b4', crack: 'rgba(40,34,30,.6)',
+                   blot: 'rgba(112,94,86,.12)', blot2: 'rgba(150,162,176,.1)', vein: 'rgba(62,76,112,.42)', bruise: 'rgba(72,44,70,.34)', blood: '#3a0605', blood2: 'rgba(96,14,12,.5)', gum: '#3a1412' };
+  const s = w / 128;                                                  // all pixel sizes are authored for a 128 px wide face and scale with the texture
+  const o = [{ k: 'rect', c: C.edge, x: 0, y: 0, w, h }], mix = (p, q, t) => { const pa = [1, 3, 5].map(i => parseInt(p.slice(i, i + 2), 16)), pb = [1, 3, 5].map(i => parseInt(q.slice(i, i + 2), 16)); return '#' + pa.map((v, i) => Math.round(v + (pb[i] - v) * t).toString(16).padStart(2, '0')).join(''); };
+  for (let i = 0; i < 8; i++) o.push({ k: 'ellipse', c: mix(C.mid, C.top, i / 7), x: w * .5, y: h * (.5 - .008 * i), rx: w * (.48 - .033 * i), ry: h * (.56 - .042 * i) });   // soft shading: concentric ellipses, darker toward the rim
+  for (let i = 0; i < 190; i++) { const r = (1.5 + rand() * 7) * s; o.push({ k: 'ellipse', c: i % 3 ? C.blot : C.blot2, x: rand() * w, y: rand() * h, rx: r, ry: r * (.6 + rand() * .7) }); }   // blotchy, uneven dead skin
+  const vein = (x, y, a, len, lw, dep) => {                           // thin branching veins showing through the skin
+    const pts = [[x, y]];
+    for (let k = 0; k < 7; k++) { a += (rand() - .5) * .7; x += Math.cos(a) * len / 7; y += Math.sin(a) * len / 7; pts.push([x, y]); if (dep > 0 && rand() < .3) vein(x, y, a + (rand() < .5 ? -.8 : .8), len * .5, lw * .7, dep - 1); }
+    o.push({ k: 'line', c: C.vein, lw, pts });
+  };
+  for (const sg of [-1, 1]) {
+    vein(w * (.5 + sg * .46), h * .22, sg < 0 ? .5 : Math.PI - .5, w * .3, 1.4 * s, 2);         // temples, creeping toward the eyes
+    vein(w * (.5 + sg * .44), h * .62, sg < 0 ? -.3 : Math.PI + .3, w * .2, 1.1 * s, 1);         // jaw
+    vein(w * (.5 + sg * .08), h * .03, Math.PI / 2 + sg * .25, h * .2, 1.2 * s, 2);              // forehead
+  }
+  const eye = (cx, cy, rx, ry, tilt, c) => { const pts = []; for (let i = 0; i < 18; i++) { const a = i / 18 * 6.2832, ex = rx * Math.cos(a) * (1 + .25 * Math.max(0, Math.cos(a) * Math.sign(tilt))), ey = ry * Math.sin(a); pts.push([cx + ex * Math.cos(tilt) - ey * Math.sin(tilt), cy + ex * Math.sin(tilt) + ey * Math.cos(tilt)]); } return { k: 'poly', c, pts }; };
+  const drip = (x, y, len, lw) => {                                   // a run of blood that thins out and ends in a bead
+    const pts = [[x, y]], n = 8; for (let k = 1; k <= n; k++) pts.push([x + (rand() - .5) * 2.2 * s, y + len * k / n]);
+    o.push({ k: 'line', c: C.blood2, lw: lw * 2.2, pts: pts.slice(0, 4) }, { k: 'line', c: C.blood, lw, pts }, { k: 'ellipse', c: C.blood, x: pts[n][0], y: pts[n][1] + lw * .3, rx: lw * .75, ry: lw * 1.1 });
+  };
+  for (const sg of [-1, 1]) {
+    o.push({ k: 'ellipse', c: C.cheek, x: w * (.5 + sg * .22), y: h * .64, rx: w * .1, ry: h * .12 });
+    const cx = w * (.5 + sg * .2), cy = h * .4, tilt = sg * .3;        // slanted, drooping hollow sockets
+    o.push(eye(cx, cy + h * .045, w * .21, h * .15, tilt, C.bruise));  // bruised, sunken skin around the sockets
+    o.push(eye(cx, cy, w * .19, h * .14, tilt, C.halo2), eye(cx, cy, w * .165, h * .12, tilt, C.halo), eye(cx, cy, w * .13, h * .09, tilt, C.hollow));
+    o.push({ k: 'ellipse', c: C.hollow, x: w * (.5 + sg * .035), y: h * .585, rx: 3 * s, ry: 2 * s });
+    for (let k = 0; k < 2; k++) drip(cx + (rand() - .5) * w * .1, cy + h * .065, h * (.12 + rand() * .2), (1.6 + rand()) * s);   // bloody tears
+  }
+  o.push({ k: 'poly', c: C.nose, pts: [[w * .5, h * .46], [w * .455, h * .58], [w * .545, h * .58]] });
+  const X = t => w * (.13 + .74 * t), up = t => h * (.66 + .075 * Math.sin(Math.PI * t)), lo = t => h * (.66 + .25 * Math.pow(Math.sin(Math.PI * t), .8)), N = 26, ring = [];
+  for (let i = 0; i <= N; i++) ring.push([X(i / N), up(i / N)]); for (let i = N; i >= 0; i--) ring.push([X(i / N), lo(i / N)]);
+  o.push({ k: 'poly', c: C.mouth, pts: ring });                                                              // a huge stretched grin
+  const gum = []; for (let i = 0; i <= N; i++) gum.push([X(i / N), up(i / N)]); for (let i = N; i >= 0; i--) gum.push([X(i / N), up(i / N) + 3.5 * s]);
+  o.push({ k: 'poly', c: C.gum, pts: gum });                                                                 // receding gums along the top teeth
+  for (let i = 0; i < 16; i++) { const t = .08 + .84 * (i + .5) / 16; if (rand() < .1) continue; const x = X(t), y = up(t), tw = w * .034, th = (5 + rand() * 6) * s; o.push({ k: 'poly', c: rand() < .25 ? mix(C.tooth, C.lip, .35) : C.tooth, pts: [[x - tw / 2, y + 2 * s], [x + tw / 2, y + 2 * s], [x + (rand() - .5) * 2 * s, y + th]] }); }
+  for (let i = 0; i < 13; i++) { const t = .12 + .76 * (i + .5) / 13; if (rand() < .12) continue; const x = X(t), y = lo(t), tw = w * .034, th = (4 + rand() * 6) * s; o.push({ k: 'poly', c: rand() < .25 ? mix(C.tooth, C.lip, .35) : C.tooth, pts: [[x - tw / 2, y], [x + tw / 2, y], [x + (rand() - .5) * 2 * s, y - th]] }); }
+  o.push({ k: 'line', c: C.lip, lw: 2 * s, pts: ring.concat([ring[0]]) });
+  for (let i = 0; i < 18; i++) { const t = .05 + .9 * rand(), x = X(t), y = (rand() < .5 ? up : lo)(t); o.push({ k: 'line', c: C.mouth, lw: .8 * s, pts: [[x, y - 2 * s], [x + (rand() - .5) * 2 * s, y + 2 * s]] }); }   // split, dried lips
+  for (const t of [.03, .22, .5, .74, .96]) drip(X(t), t < .1 || t > .9 ? h * .665 : lo(t), h * (.06 + rand() * .12), (1.6 + rand() * 1.2) * s);   // blood running from the mouth
+  for (const [x0, y0, dx, dy] of [[.3, .12, .08, .22], [.7, .16, -.06, .2], [.18, .5, .04, .16]]) { const pts = [[w * x0, h * y0]]; for (let k = 1; k <= 4; k++) pts.push([w * (x0 + dx * k / 4) + (rand() - .5) * 4 * s, h * (y0 + dy * k / 4)]); o.push({ k: 'line', c: C.crack, lw: 1.2 * s, pts }); }
+  return o;
+}
+function drawPrims(g, prims) {
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  for (const q of prims) {
+    if (q.k === 'rect') { g.fillStyle = q.c; g.fillRect(q.x, q.y, q.w, q.h); }
+    else if (q.k === 'ellipse') { g.fillStyle = q.c; g.beginPath(); g.ellipse(q.x, q.y, q.rx, q.ry, 0, 0, 6.2832); g.fill(); }
+    else if (q.k === 'poly') { g.fillStyle = q.c; g.beginPath(); q.pts.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.closePath(); g.fill(); }
+    else { g.strokeStyle = q.c; g.lineWidth = q.lw; g.beginPath(); q.pts.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.stroke(); }
+  }
+}
+const faceTex = [false, true].map(dk => canvasTex(256, 320, (g, w, h) => drawPrims(g, facePrims(w, h, dk))));
+// milky, bloodshot eyeballs (the coloured pinprick pupil is a separate mesh so the chase colour changes still work)
+const eyeballTex = [false, true].map(dk => canvasTex(128, 64, (g, w, h) => {
+  let sd = dk ? 13 : 7; const rand = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
+  g.fillStyle = dk ? '#26272e' : '#cfc9b6'; g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 40; i++) { g.fillStyle = dk ? 'rgba(0,0,0,.18)' : 'rgba(170,160,120,.18)'; g.beginPath(); g.ellipse(rand() * w, rand() * h, 3 + rand() * 8, 2 + rand() * 5, 0, 0, 6.2832); g.fill(); }
+  g.lineCap = 'round';
+  for (let i = 0; i < 26; i++) {
+    let x = rand() * w, y = rand() < .5 ? 0 : h, a = y ? -Math.PI / 2 : Math.PI / 2; g.strokeStyle = dk ? 'rgba(0,0,0,.45)' : `rgba(${150 + rand() * 50 | 0},20,18,${.45 + rand() * .35})`; g.lineWidth = .6 + rand() * 1.1; g.beginPath(); g.moveTo(x, y);
+    for (let k = 0; k < 6; k++) { a += (rand() - .5) * 1.1; x += Math.cos(a) * 5; y += Math.sin(a) * 5; g.lineTo(x, y); } g.stroke();
+  }
+}));
+// faint cold edge glow on the ghost's surfaces (fresnel rim, added to the emissive term so fog still swallows it)
+function addRim(mat, color, power = 2.4) {
+  const rim = { value: new THREE.Color(color) }, pw = { value: power };
+  mat.onBeforeCompile = sh => {
+    sh.uniforms.rimColor = rim; sh.uniforms.rimPow = pw;
+    sh.fragmentShader = 'uniform vec3 rimColor;\nuniform float rimPow;\n' + sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n  totalEmissiveRadiance += rimColor * pow(1.0 - clamp(abs(dot(normal, normalize(vViewPosition))), 0.0, 1.0), rimPow);');
+  };
+  mat.userData.rim = rim; return mat;
+}
+// skull sculpt: sunken sockets, hollow cheeks under sharp cheekbones, a brow ridge, a thin nose, a caved-in mouth and a pointed chin.
+// Directions use the same (theta, phi) convention as THREE.SphereGeometry, so they line up with the face texture's sockets and grin.
+const headDir = (th, ph) => new THREE.Vector3(-Math.cos(ph) * Math.sin(th), Math.cos(th), Math.sin(ph) * Math.sin(th));
+const HEAD_SOCKET = [-1, 1].map(sg => headDir(1.1, Math.PI / 2 + sg * .34));
+const HEAD_BUMPS = [
+  ...HEAD_SOCKET.map(c => [c, -.075, .17]),
+  ...[-1, 1].map(sg => [headDir(1.6, Math.PI / 2 + sg * .5), -.065, .22]),
+  ...[-1, 1].map(sg => [headDir(1.3, Math.PI / 2 + sg * .64), .035, .14]),
+  ...[-1, 1].map(sg => [headDir(.84, Math.PI / 2 + sg * .3), .028, .15]),
+  [headDir(1.36, Math.PI / 2), .055, .085], [headDir(1.2, Math.PI / 2), .025, .09],
+  [headDir(1.86, Math.PI / 2), -.04, .3], [headDir(2.3, Math.PI / 2), .045, .2]
+];
+const headSculpt = d => { let f = 1; for (const [c, a, w] of HEAD_BUMPS) { const ang = Math.acos(Math.min(1, Math.max(-1, d.dot(c)))); f += a * Math.exp(-((ang / w) ** 2)); } return f; };
+function sculptHead(geo) {
+  const p = geo.attributes.position, v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i); const r = v.length(); if (r < 1e-6) continue; v.divideScalar(r); v.multiplyScalar(r * headSculpt(v)); p.setXYZ(i, v.x, v.y, v.z); }
+  geo.computeVertexNormals(); return geo;
+}
+// ---- outfit: layered blue-grey kimono (floral pattern, white collar, dark obi with a red cord) drawn as data, so a preview image can be produced from the same shapes ----
+const GOWN = [[0, 1.9], [.2, 1.86], [.27, 1.74], [.4, 1.5], [.52, 1.2], [.66, .85], [.8, .6], [.86, .5]];   // gown profile (radius, height), neckline first
+const GHOST_SLEEVES = true;                                    // wide hanging kimono sleeves (cloth only, no arms); set false to remove them
+const gownV = y => { for (let i = 0; i < GOWN.length - 1; i++) { const a = GOWN[i][1], b = GOWN[i + 1][1]; if (y <= a && y >= b) return (i + (a - y) / (a - b)) / (GOWN.length - 1); } return y > GOWN[0][1] ? 0 : 1; };   // texture row of a height (0 = neckline, 1 = hem)
+function kimonoPrims(w, h, dark) {
+  let sd = dark ? 505 : 909; const rand = () => { sd = (sd + 0x6D2B79F5) | 0; let t = Math.imul(sd ^ (sd >>> 15), 1 | sd); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const C = dark ? { top: '#101016', bot: '#09090d', petal: '#25252e', heart: '#33333d', dot: '#1d1d25', wave: '#1a1a22', obi: '#050507', obiLine: '#2a2a34', collar: '#2c2c35', collar2: '#17171d', cord: '#2a1414', hem: '#16161c' }
+                 : { top: '#7f89aa', bot: '#5a6483', petal: '#b8bfd8', heart: '#e3ddd0', dot: '#a3abc8', wave: '#6d7898', obi: '#2a2f4a', obiLine: '#c9aa68', collar: '#e9e3d3', collar2: '#c7c1b3', cord: '#c4482a', hem: '#d3cdbf' };
+  const mix = (p, q, t) => { const pa = [1, 3, 5].map(i => parseInt(p.slice(i, i + 2), 16)), pb = [1, 3, 5].map(i => parseInt(q.slice(i, i + 2), 16)); return '#' + pa.map((v, i) => Math.round(v + (pb[i] - v) * t).toString(16).padStart(2, '0')).join(''); };
+  const o = []; for (let i = 0; i < 48; i++) o.push({ k: 'rect', c: mix(C.top, C.bot, i / 47), x: 0, y: h * i / 48, w, h: h / 48 + 1 });
+  for (let i = 0; i < 9; i++) { const y0 = h * (.1 + i * .1), pts = []; for (let x = 0; x <= w; x += 8) pts.push([x, y0 + Math.sin(x / w * 6.2832 * 3 + i) * 5]); o.push({ k: 'line', c: C.wave, lw: 1.6, pts }); }   // flowing wave lines (wrap seamlessly)
+  const flower = (cx, cy, r, rot) => { for (let k = 0; k < 5; k++) { const a = rot + k * 1.2566, pts = []; for (let j = 0; j < 10; j++) { const t = j / 10 * 6.2832, ex = Math.cos(t) * r * .34, ey = Math.sin(t) * r * .22, px = r * .56 + ex; pts.push([cx + px * Math.cos(a) - ey * Math.sin(a), cy + px * Math.sin(a) + ey * Math.cos(a)]); } o.push({ k: 'poly', c: C.petal, pts }); } o.push({ k: 'ellipse', c: C.heart, x: cx, y: cy, rx: r * .2, ry: r * .2 }); };
+  for (let i = 0; i < 56; i++) { const cx = rand() * w, cy = h * (.14 + rand() * .76), r = 9 + rand() * 9, rot = rand() * 6.28; flower(cx, cy, r, rot); if (cx < r * 2) flower(cx + w, cy, r, rot); if (cx > w - r * 2) flower(cx - w, cy, r, rot); }
+  for (let i = 0; i < 110; i++) o.push({ k: 'ellipse', c: C.dot, x: rand() * w, y: h * (.12 + rand() * .8), rx: 1.8, ry: 1.8 });
+  const yTop = gownV(1.88) * h, yApex = gownV(1.44) * h, yo1 = gownV(1.34) * h, yo2 = gownV(1.12) * h, yh = gownV(.58) * h;
+  o.push({ k: 'rect', c: C.hem, x: 0, y: yh, w, h: h - yh }, { k: 'rect', c: C.obi, x: 0, y: yo1, w, h: yo2 - yo1 }, { k: 'rect', c: C.obiLine, x: 0, y: yo1, w, h: 3 }, { k: 'rect', c: C.obiLine, x: 0, y: yo2 - 3, w, h: 3 });   // pale under-robe at the hem, dark obi band
+  for (let x = 6; x < w; x += 22) o.push({ k: 'rect', c: C.obiLine, x, y: yo1 + 8, w: 2, h: yo2 - yo1 - 16 });
+  for (const m of [0, 1]) {                 // V-shaped white collar, split over the texture seam so it meets at the front centre
+    const sg = m ? -1 : 1, x0 = m ? w : 0;
+    o.push({ k: 'poly', c: C.collar, pts: [[x0, yTop], [x0 + sg * w * .1, yTop], [x0, yApex]] }, { k: 'poly', c: C.collar2, pts: [[x0, yTop], [x0 + sg * w * .05, yTop], [x0, yApex * .9]] });
+    o.push({ k: 'rect', c: C.cord, x: m ? w - 4 : 0, y: yo2, w: 4, h: h * .16 });   // red cord hanging from the obi
+  }
+  // age and death: grime smudges, then blood soaked into the collar and running down the front (front centre = texture seam, so stains are wrapped)
+  const S = dark ? { grime: 'rgba(0,0,0,.35)', blood: 'rgba(0,0,0,.55)', blood2: 'rgba(0,0,0,.35)' } : { grime: 'rgba(64,50,38,.28)', blood: 'rgba(92,14,12,.78)', blood2: 'rgba(110,20,16,.42)' };
+  const blob = (cx, cy, r, c) => { const pts = []; for (let k = 0; k < 16; k++) { const a = k / 16 * 6.2832, rr = r * (.6 + rand() * .6); pts.push([cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * .8]); } for (const dx of [0, w, -w]) o.push({ k: 'poly', c, pts: pts.map(([x, y]) => [x + dx, y]) }); };
+  const run = (x, y, len, lw, c) => { const pts = [[x, y]]; for (let k = 1; k <= 10; k++) pts.push([x + (rand() - .5) * 3, y + len * k / 10]); for (const dx of [0, w, -w]) o.push({ k: 'line', c, lw, pts: pts.map(([px, py]) => [px + dx, py]) }, { k: 'ellipse', c, x: pts[10][0] + dx, y: pts[10][1], rx: lw * .8, ry: lw * 1.1 }); };
+  for (let i = 0; i < 26; i++) blob(rand() * w, h * (.35 + rand() * .6), 10 + rand() * 26, S.grime);
+  for (let i = 0; i < 7; i++) blob((rand() - .5) * w * .16, yTop + (yApex - yTop) * (.2 + rand() * .9), 8 + rand() * 14, S.blood2);
+  for (let i = 0; i < 4; i++) blob((rand() - .5) * w * .1, yTop + (yApex - yTop) * (.3 + rand() * .6), 5 + rand() * 8, S.blood);
+  for (let i = 0; i < 9; i++) run((rand() - .5) * w * .14, yTop + (yApex - yTop) * (.4 + rand() * .6), h * (.06 + rand() * .2), 2 + rand() * 3, S.blood);
+  for (let i = 0; i < 5; i++) { const x = rand() * w, y = h * (.3 + rand() * .5); blob(x, y, 4 + rand() * 7, S.blood2); if (rand() < .6) run(x, y, h * (.03 + rand() * .08), 1.5 + rand() * 2, S.blood2); }   // spatter
+  return o;
+}
+const kimonoTex = [false, true].map(dk => { const t = canvasTex(512, 512, (g, w, h) => drawPrims(g, kimonoPrims(w, h, dk))); t.flipY = false; return t; });   // flipY off: row 0 = neckline, like the lathe's first point
+const fadeTex = (() => { const t = canvasTex(8, 128, (g, w, h) => { const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, '#ffffff'); gr.addColorStop(.2, '#ffffff'); gr.addColorStop(1, '#000000'); g.fillStyle = gr; g.fillRect(0, 0, w, h); }); t.flipY = false; return t; })();   // alpha ramp: solid at the top, fully see-through at the bottom
+const hairMat = new THREE.MeshStandardMaterial({ color: 0x040405, roughness: .88, side: THREE.DoubleSide });   // lank black hair (kept rough: the ghost's own close light turns any gloss into a silver helmet)
+function makeHairGeometry(prof) {          // long black strands that follow the gown from the crown down over the shoulders and back (the front stays clear for the face)
+  let sd = 4242; const rand = () => { sd = (sd + 0x6D2B79F5) | 0; let t = Math.imul(sd ^ (sd >>> 15), 1 | sd); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const rOf = y => { for (let i = 0; i < prof.length - 1; i++) { const a = prof[i], b = prof[i + 1]; if (y <= a.y && y >= b.y) return a.x + (b.x - a.x) * (a.y - y) / (a.y - b.y); } return y > prof[0].y ? prof[0].x : prof[prof.length - 1].x; };   // above the neck: no gown (this used to return the hem radius and flung the hair out sideways)
+  const hr = y => y > 1.7 ? .27 * Math.sqrt(Math.max(.2, 1 - ((y - 1.98) / .34) ** 2)) : 0;
+  const pos = [], idx = [], N = 8, strands = [];
+  for (let j = 0; j < 6; j++) for (const sg of [-1, 1]) strands.push({ a: sg * (1.0 + j * .12 + rand() * .05), L: .85 + rand() * .45 });          // over the shoulders, framing the face
+  for (let i = 0; i < 22; i++) strands.push({ a: 1.7 + 2.88 * (i / 21) + (rand() - .5) * .1, L: 1.0 + rand() * .75 });                           // down the back
+  strands.forEach((st, i) => {
+    const y0 = 2.06 - rand() * .1, base = pos.length / 3;
+    for (let k = 0; k <= N; k++) {
+      const y = y0 - st.L * k / N, r = Math.max(rOf(y) + .06, hr(y) + .02) + Math.sin(k * 1.3 + i * 2.1) * .012, w = .085 * (1 - .65 * k / N) * (.8 + rand() * .4);
+      const cx = Math.sin(st.a) * r, cz = Math.cos(st.a) * r, tx = Math.cos(st.a), tz = -Math.sin(st.a);
+      pos.push(cx - tx * w / 2, y, cz - tz * w / 2, cx + tx * w / 2, y, cz + tz * w / 2);
+    }
+    for (let k = 0; k < N; k++) { const v = base + 2 * k; idx.push(v, v + 1, v + 2, v + 1, v + 3, v + 2); }
+  });
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3)); g.setIndex(idx); g.computeVertexNormals(); return g;
+}
+// Ghost Sight x-ray material: purple fresnel silhouette (bright rims, faint centre) so the ghost's full shape reads through walls.
+// depthFunc Greater = drawn only where a wall / floor is in front of the ghost; the stencil makes overlapping parts add up only once per pixel.
+function xrayMat(fade, k) {
+  return new THREE.ShaderMaterial({
+    uniforms: { color: { value: new THREE.Color(0xc050ff) }, op: { value: .4 }, k: { value: k }, amap: { value: fadeTex } },
+    defines: fade ? { FADE: 1 } : {},
+    vertexShader: `varying vec3 vN; varying vec3 vV; varying vec2 vUv;
+      void main() { vUv = uv; vec4 mv = modelViewMatrix * vec4(position, 1.0); vV = -mv.xyz; vN = normalMatrix * normal; gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `uniform vec3 color; uniform float op; uniform float k; uniform sampler2D amap; varying vec3 vN; varying vec3 vV; varying vec2 vUv;
+      void main() {
+        float f = 1.0 - abs(dot(normalize(vN), normalize(vV))), a = op * k * (0.35 + 1.5 * f * f);
+        #ifdef FADE
+          a *= texture2D(amap, vUv).g;
+        #endif
+        if (a < 0.02) discard;
+        gl_FragColor = vec4(mix(color, vec3(1.0, 0.85, 1.0), f * f * 0.5), a);
+      }`,
+    blending: THREE.AdditiveBlending, transparent: false, depthWrite: false, depthFunc: THREE.GreaterDepth, side: THREE.DoubleSide,
+    stencilWrite: true, stencilRef: 1, stencilFunc: THREE.NotEqualStencilFunc, stencilZPass: THREE.ReplaceStencilOp
+  });
+}
+function makeFringeGeometry() {           // head-local hair: a centre parting, bangs that slide off the crown and hang down the sides of the face, and a few loose strands across it
+  let sd = 9137; const rand = () => { sd = (sd + 0x6D2B79F5) | 0; let t = Math.imul(sd ^ (sd >>> 15), 1 | sd); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const a = .263, b = .348, c = .292;                                             // just outside the hair cap ellipsoid
+  const zFace = (x, y) => .256 * Math.sqrt(Math.max(0, 1 - (x / .22) ** 2 - ((y - .16) / .3) ** 2));   // front of the (sculpted) face, so strands never sink into it
+  const pos = [], idx = [], strands = [];
+  for (const sg of [-1, 1]) for (let j = 0; j < 8; j++) strands.push({ x: sg * (.018 + j * .022 + rand() * .008), xe: sg * (.165 + j * .012 + rand() * .015), t1: 1.0 + rand() * .2, y1: .02 - rand() * .24, w: .024 + rand() * .01 });
+  for (const x of [-.1, .125]) strands.push({ x: x * .6, xe: x, t1: .95 + rand() * .1, y1: .06 - rand() * .1, w: .008 + rand() * .004 });   // two loose strands straggle over the edge of the eyes
+  strands.forEach((st, i) => {
+    const pts = [];
+    for (let k = 0; k <= 6; k++) {                                  // over the skull: the strand already sweeps out to the side of the face, so the eyes stay clear
+      const u = k / 6, th = .2 + (st.t1 - .2) * u, x = st.x + (st.xe - st.x) * .9 * u * u, qq = Math.sqrt(Math.max(.05, 1 - (x / a) ** 2));
+      pts.push([x, .18 + b * qq * Math.cos(th), -.035 + c * qq * Math.sin(th)]);
+    }
+    const [x0, y0, z0] = pts[6];
+    for (let k = 1; k <= 12; k++) { const t = k / 12, y = y0 + (st.y1 - y0) * t, x = x0 + (st.xe - x0) * t + Math.sin(t * 5 + i) * .007; pts.push([x, y, Math.max(z0 + .015 * t, zFace(x, y) + .026)]); }
+    const base = pos.length / 3;
+    pts.forEach(([x, y, z], k) => { const w = st.w * (1 - .7 * k / (pts.length - 1)) / 2; pos.push(x - w, y, z, x + w, y, z); });
+    for (let k = 0; k < pts.length - 1; k++) { const v = base + 2 * k; idx.push(v, v + 1, v + 2, v + 1, v + 3, v + 2); }
+  });
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3)); g.setIndex(idx); g.computeVertexNormals(); return g;
+}
+const fringeGeo = makeFringeGeometry();
 function makeGhost(dark = false) {
   const mesh = new THREE.Group();
-  const prof = [[0, 2.3], [.3, 2.22], [.5, 2.0], [.58, 1.7], [.66, 1.25], [.82, .8], [1.0, .35], [1.12, 0]].map(([r, y]) => new THREE.Vector2(r, y));
-  const geo = new THREE.LatheGeometry(prof, 40), p = geo.attributes.position;
-  for (let i = 0; i < p.count; i++) { const y = p.getY(i); if (y < 0.9) { const k = (0.9 - y) / 0.9; p.setY(i, y + Math.sin(Math.atan2(p.getZ(i), p.getX(i)) * 6) * 0.14 * k * k); } }
-  geo.computeVertexNormals();
-  const sheetMat = new THREE.MeshStandardMaterial({ color: dark ? 0x060608 : 0xf2f2f6, emissive: dark ? 0x020204 : 0x5a1a1a, roughness: .7, side: THREE.DoubleSide });
+  // gown: gaunt and long, with fabric folds; the kimono pattern + collar + obi come from the texture
+  const prof = GOWN.map(([r, y]) => new THREE.Vector2(r, y));
+  const geo = new THREE.LatheGeometry(prof, 48), p = geo.attributes.position, col = new Float32Array(p.count * 3);
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i), a = Math.atan2(z, x), f = 1 + .05 * Math.sin(a * 9 + y * 2.5) + .03 * Math.sin(a * 5 - y * 1.7);
+    p.setX(i, x * f); p.setZ(i, z * f);
+    const dirt = dark ? 0 : (1 - Math.min(1, y / 1.9)) * .3, b = 1 - dirt; col[i * 3] = b; col[i * 3 + 1] = b * .98; col[i * 3 + 2] = b * (.96 - dirt * .1);
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); geo.computeVertexNormals();
+  const emis = dark ? 0x020204 : 0x2a0f10, kTex = kimonoTex[dark ? 1 : 0];
+  const rimC = dark ? 0x070a12 : 0x1c2430;
+  const sheetMat = addRim(new THREE.MeshStandardMaterial({ map: kTex, vertexColors: true, emissive: emis, roughness: .8, side: THREE.DoubleSide }), rimC);
   mesh.add(new THREE.Mesh(geo, sheetMat));
-  const eyeMat = new THREE.MeshBasicMaterial({ color: dark ? 0xe6f6ff : 0xb01810 }), mouthMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
-  for (const x of [-.2, .2]) { const e = new THREE.Mesh(new THREE.SphereGeometry(.12, 16, 16), eyeMat); e.scale.set(.9, 1.25, .5); e.position.set(x, 1.78, .52); mesh.add(e); }
-  const mouth = new THREE.Mesh(new THREE.SphereGeometry(.07, 12, 12), mouthMat); mouth.scale.set(.8, 1.3, .5); mouth.position.set(0, 1.5, .62); mesh.add(mouth);
+  // the legs are not drawn solid: the gown dissolves into a see-through haze, with faint blurred legs and feet inside it - the ghost floats
+  const sprof = [[.86, .52], [.97, .3], [1.08, .12], [1.16, -.05]].map(([r, y]) => new THREE.Vector2(r, y));
+  const sgeo = new THREE.LatheGeometry(sprof, 48), sp = sgeo.attributes.position;
+  for (let i = 0; i < sp.count; i++) {
+    const x = sp.getX(i), y = sp.getY(i), z = sp.getZ(i), a = Math.atan2(z, x), f = 1 + .05 * Math.sin(a * 9 + y * 2.5) + .03 * Math.sin(a * 5 - y * 1.7);
+    sp.setX(i, x * f); sp.setZ(i, z * f);
+    if (y < .3) { const k = (.3 - y) / .35; sp.setY(i, y + (Math.sin(a * 7) * .1 + Math.sin(a * 13 + 1.7) * .04) * k); }
+  }
+  sgeo.computeVertexNormals();
+  const skirt = new THREE.Mesh(sgeo, new THREE.MeshStandardMaterial({ color: dark ? 0x0d0d11 : 0xb9b9c2, alphaMap: fadeTex, transparent: true, depthWrite: false, emissive: dark ? 0x020204 : 0x1c1012, roughness: .9, side: THREE.DoubleSide })); skirt.renderOrder = 2; mesh.add(skirt);
+  const legMat = new THREE.MeshBasicMaterial({ color: dark ? 0x101014 : 0xd8d2c4, transparent: true, opacity: dark ? .3 : .2, depthWrite: false });
+  for (const s of [-1, 1]) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(.075, .045, .55, 10), legMat); leg.position.set(s * .13, .22, .04); leg.rotation.z = s * .05; mesh.add(leg);
+    const foot = new THREE.Mesh(new THREE.SphereGeometry(.07, 8, 6), legMat); foot.scale.set(1, .45, 1.9); foot.position.set(s * .14, -.03, .1); mesh.add(foot);
+  }
+  // wide hanging kimono sleeves: cloth only, a bell open toward the front/inside, swaying slightly (no arms or hands)
+  const sleeves = [];
+  if (GHOST_SLEEVES) for (const s of [-1, 1]) {
+    const slg = new THREE.LatheGeometry([[.05, 0], [.09, -.25], [.15, -.55], [.22, -.85], [.27, -1.05]].map(([r, y]) => new THREE.Vector2(r, y)), 16, s > 0 ? -Math.PI / 4 + .7 : Math.PI / 4 + .7, Math.PI * 2 - 1.4); slg.computeVertexNormals();
+    const sl = new THREE.Mesh(slg, addRim(new THREE.MeshStandardMaterial({ map: kTex, emissive: emis, roughness: .8, side: THREE.DoubleSide }), rimC)); sl.position.set(s * .24, 1.76, .02); sl.rotation.z = s * .42; sl.rotation.x = -.08; mesh.add(sl); sleeves.push(sl);
+  }
+  mesh.add(new THREE.Mesh(makeHairGeometry(GOWN.map(([r, y]) => new THREE.Vector2(r, y)).concat(sprof)), hairMat));
+  // head: pale skull with a hollow-eyed, wide-grinning face, framed by a black hair cap; tilted forward like a hunched yurei, it sways and twitches (animated in render)
+  const head = new THREE.Group(); head.position.set(0, 1.82, 0); mesh.add(head);
+  // waxy dead skin: slightly glossy so the ghost's own light catches the sculpted bones, plus a faint cold rim
+  const skinMat = addRim(new THREE.MeshStandardMaterial({ color: dark ? 0x2b2b31 : 0xcfc8ba, roughness: .78, emissive: dark ? 0x000000 : 0x1a1410 }), dark ? 0x0a0e16 : 0x2c3644);
+  const faceMat = addRim(new THREE.MeshStandardMaterial({ map: faceTex[dark ? 1 : 0], color: dark ? 0xffffff : 0xd6d0c8, roughness: .78, emissive: dark ? 0x050508 : 0x24201a }), dark ? 0x0a0e16 : 0x2c3644);
+  const HS = new THREE.Vector3(.82, 1.12, .9), HC = new THREE.Vector3(0, .16, 0);   // head ellipsoid scale / centre (skin, face and eyes share it)
+  const part = (g, m) => { const q = new THREE.Mesh(g, m); q.scale.copy(HS); q.position.copy(HC); head.add(q); return q; };
+  part(sculptHead(new THREE.SphereGeometry(.26, 48, 36)), skinMat);
+  part(sculptHead(new THREE.SphereGeometry(.268, 56, 44, Math.PI / 2 - .85, 1.7, .3, 2.0)), faceMat);
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(.292, 28, 18, Math.PI / 2 + .62, Math.PI * 2 - 1.24, 0, Math.PI * .64), hairMat); cap.scale.set(.86, 1.15, .96); cap.position.set(0, .18, -.035); head.add(cap);
+  head.add(new THREE.Mesh(fringeGeo, hairMat));                   // parted bangs falling over the sides of the face, with loose strands across it
+  // eyes: clouded, bloodshot eyeballs sunk in the sculpted sockets, each with a tiny glowing pupil that stares straight ahead
+  const eyeMat = new THREE.MeshBasicMaterial({ color: dark ? 0xe6f6ff : 0xb01810 });
+  const ballMat = new THREE.MeshStandardMaterial({ map: eyeballTex[dark ? 1 : 0], roughness: .22, emissive: dark ? 0x05060a : 0x1a1612 });
+  const eyePos = HEAD_SOCKET.map(c => c.clone().multiplyScalar(.268 * headSculpt(c)).multiply(HS).add(HC).add(new THREE.Vector3(0, 0, -.027)));   // socket centre on the face, pushed back so the ball sits inside the hollow
+  for (const ep of eyePos) {
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(.028, 18, 14), ballMat); ball.position.copy(ep); ball.rotation.y = -Math.PI / 2; head.add(ball);   // smaller than the socket, so a dark hollow ring stays around it
+    const pu = new THREE.Mesh(new THREE.SphereGeometry(.009, 10, 8), eyeMat); pu.scale.z = .4; pu.position.set(ep.x, ep.y - .002, ep.z + .027); head.add(pu);
+  }
   const eyeGlow = new THREE.SpriteMaterial({ map: glowTex, color: dark ? 0xbfe8ff : 0xff3a22, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, transparent: true, opacity: .7 });
-  const eyes = [-.2, .2].map(x => { const sp = new THREE.Sprite(eyeGlow); sp.position.set(x, 1.78, .62); mesh.add(sp); return sp; });
-  const lights = [0, 1].map(L => { const l = new THREE.PointLight(dark ? 0x9cc8ff : 0xff2418, 0, 14); l.position.set(0, 1.6, .6); l.layers.set(FL(L)); mesh.add(l); return l; });   // one light per floor layer; only the ghost's own floor gets intensity
+  const eyes = eyePos.map(ep => { const sp2 = new THREE.Sprite(eyeGlow); sp2.position.set(ep.x, ep.y, ep.z + .07); head.add(sp2); return sp2; });
+  // translucent trailing cloth at the hem (like the drifting skirt of a yurei)
+  const wGeo = new THREE.PlaneGeometry(.28, 1); wGeo.translate(0, -.5, 0); const wisps = [];
+  const wMat = new THREE.MeshBasicMaterial({ color: dark ? 0x15151a : 0xe6e0d2, transparent: true, opacity: dark ? .35 : .22, side: THREE.DoubleSide, depthWrite: false });
+  for (let i = 0; i < 9; i++) { const a = 1.2 + i / 8 * 3.9, w = new THREE.Mesh(wGeo, wMat); w.rotation.order = 'YXZ'; w.position.set(Math.sin(a) * 1.0, .3, Math.cos(a) * 1.0); w.rotation.y = a; w.scale.set(1, .32 + ((i * 5) % 4) * .06, 1); mesh.add(w); wisps.push(w); }
+  const lights = [0, 1].map(L => { const l = new THREE.PointLight(dark ? 0x9cc8ff : 0xff2418, 0, 14); l.position.set(0, 2.0, .6); l.layers.set(FL(L)); l.layers.enable(GL(L)); mesh.add(l); return l; });   // one light per floor layer; only the ghost's own floor gets intensity
   const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: dark ? 0x7aa8d8 : 0xff2a1a, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, transparent: true, opacity: dark ? .12 : .4 }));
   glow.scale.set(6, 6, 1); glow.position.y = 1.3; mesh.add(glow);
-  const xray = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xc050ff, transparent: true, opacity: .45, depthTest: false, depthWrite: false, fog: false, side: THREE.DoubleSide })); xray.renderOrder = 999; xray.visible = false; mesh.add(xray);
-  const marker = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xd070ff, blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false, fog: false, transparent: true, opacity: .9 })); marker.scale.set(1.8, 1.8, 1); marker.position.y = 2.9; marker.renderOrder = 1000; marker.visible = false; mesh.add(marker);
+  // Ghost Sight: every visible part (gown, sleeves, hair, head, eyes, fading skirt, legs, trailing cloth) gets an x-ray twin parented to it, so it follows all animation
+  const xrMats = { solid: xrayMat(false, 1), fade: xrayMat(true, 1), faint: xrayMat(false, .45) }, xray = [], parts = [];
+  mesh.traverse(o => { if (o.isMesh) parts.push(o); });
+  for (const o of parts) {
+    const m = o.material, x = new THREE.Mesh(o.geometry, m.alphaMap ? xrMats.fade : m.transparent ? xrMats.faint : xrMats.solid);
+    x.userData.xray = true; x.renderOrder = m.transparent ? 2 : 1; x.visible = false; o.add(x); xray.push(x);
+  }
+  const marker = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xd070ff, blending: THREE.AdditiveBlending, depthFunc: THREE.GreaterDepth, depthWrite: false, fog: false, transparent: true, opacity: .9 }));
+  marker.userData.xray = true; marker.scale.set(1.8, 1.8, 1); marker.position.y = 2.9; marker.renderOrder = 3; marker.visible = false; mesh.add(marker);   // locator glow over the head, also only where it is hidden
+  setActorLayer(mesh, 0);
   scene.add(mesh);
   const shadow = new THREE.Mesh(shadowGeo, new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false, opacity: .8, polygonOffset: true, polygonOffsetFactor: -2 })); shadow.scale.set(2.9, 1, 2.9); shadow.renderOrder = 1; scene.add(shadow);   // contact blob on the floor
-  return { mesh, sheetMat, eyeMat, eyeGlow, eyes, lights, shadow, fl: -1, glow, xray, marker, hunt: null, x: 0, z: 0, L: 0, yaw: 0, state: 'wander', goal: null, pause: 0, lost: 0, last: null, path: 0, next: null, wt: 0, wp: null, base: 0, ws: 0, cab: null };
+  return { mesh, head, wisps, sleeves, sheetMat, eyeMat, eyeGlow, eyes, lights, shadow, fl: -1, glow, xray, xrMats, marker, hunt: null, x: 0, z: 0, L: 0, yaw: 0, state: 'wander', goal: null, pause: 0, lost: 0, last: null, path: 0, next: null, wt: 0, wp: null, base: 0, ws: 0, cab: null };
 }
 const ghosts = [makeGhost(), makeGhost()];
 const blackG = makeGhost(true); blackG.state = 'chase'; blackG.wt = WAIT;
@@ -756,16 +1331,20 @@ showBlack(false);
 const allGhosts = () => blackOn ? [...ghosts, blackG] : ghosts;
 
 // ================= [2 PLAYER] state / input =================
-const P = { x: 0, z: 0, y: 0, cy: 1.6, level: 0, yaw: 0, pitch: 0, stam: 1, phase: 0, mx: 0, mz: 0, mv: 0, running: false, by: 0, si: 0, hidden: false, cab: null, hy: 0, pyaw: 0, ppitch: 0, sx: 0, sy: 0, vx: 0, vy: 0, tired: false, rb: 0, mvS: 0 };
-let target = null, heartLvl = 0, heartT = 0, vision = 0, creakT = 0;
+const P = { x: 0, z: 0, y: 0, cy: 1.6, level: 0, yaw: 0, pitch: 0, stam: 1, phase: 0, mx: 0, mz: 0, mv: 0, running: false, by: 0, si: 0, hidden: false, cab: null, hy: 0, pyaw: 0, ppitch: 0, sx: 0, sy: 0, vx: 0, vy: 0, tired: false, rb: 0, mvS: 0, ss: 0, tv: 0, br: 0 };
+let target = null, heartLvl = 0, heartT = 0, vision = 0;
 let blackLvl = 0, warnB = -1, prevWarn = -1, cueT = 0, glitchT = 0, pausedAt = 0, hasKey = false, msgT = 0;
-let anomalyT = 0, deathT = -1, deathBy = null, shakeX = 0, shakeY = 0, shakeZ = 0, deathRoll = 0;
+let anomalyT = 0, omenT = 0, deathT = -1, deathBy = null, shakeX = 0, shakeY = 0, shakeZ = 0, deathRoll = 0;
 const hv = () => Math.max(heartLvl, blackLvl);          // combined heartbeat / red-edge level
 const keys = {}; const SENS = 0.0022, cv = renderer.domElement; let drag = false;
 const $ = id => document.getElementById(id);
 const ov = $('ov'), T = $('t'), Sx = $('s'), B = $('b'), hud = $('hud'), bar = document.querySelector('#bar i'), vig = $('vig');
 const recE = $('rec'), tmE = $('tm'), slats = $('slats'), promptE = $('prompt'), floorE = $('floor'), potionE = $('potion');
-const keyE = $('keyhud'), msgE = $('msg'), miniE = $('mini'), dotE = $('dot'), alertE = $('alert'), cueE = $('cue');
+const keyE = $('keyhud'), msgE = $('msg'), miniE = $('mini'), omenE = $('omen'), alertE = $('alert'), cueE = $('cue'), diffE = $('diff'), bestE = $('best');
+const miniCtx = miniE.getContext('2d');
+const MINI_T = 3;                           // minimap: pixels per maze tile (the square is the WHOLE floor: 23 tiles x 3 px, shown at 2x with hard pixels). It shows only your own marker - no walls, no surroundings
+miniE.width = miniE.height = W * MINI_T;
+const miniImg = miniCtx.createImageData(W * MINI_T, W * MINI_T);
 
 addEventListener('keydown', e => { keys[e.code] = true; if (e.code === 'KeyE' && !e.repeat) interact(); });
 addEventListener('keyup', e => { keys[e.code] = false; });
@@ -779,12 +1358,43 @@ addEventListener('mousemove', e => {
 });
 cv.addEventListener('click', () => { if (state === 'play' && document.pointerLockElement !== cv) cv.requestPointerLock(); });
 
+
+// ================= [2 PLAYER] saved records, difficulty, goals =================
+function loadSave() {                       // tolerant loader: anything missing / corrupt falls back to defaults (storage may be unavailable)
+  const def = { difficulty: 'normal', best: {} };
+  for (const k in DIFFS) def.best[k] = null;
+  try {
+    const d = JSON.parse(localStorage.getItem(SAVE_KEY)); if (!d || typeof d !== 'object') return def;
+    if (DIFFS[d.difficulty]) def.difficulty = d.difficulty;
+    for (const k in DIFFS) { const b = d.best && d.best[k]; if (typeof b === 'number' && isFinite(b) && b > 0) def.best[k] = b; }
+  } catch (e) { /* no storage / bad JSON: keep defaults */ }
+  return def;
+}
+let saved = loadSave(), runDiff = saved.difficulty;
+function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(saved)); } catch (e) { /* storage full / blocked: the game still works */ } }
+function applyDifficulty(k) { const d = DIFFS[k] || DIFFS.normal; WANDER = BASE.WANDER * d.spd; CHASE = BASE.CHASE * d.spd; SIGHT = BASE.SIGHT * d.sight; NEAR = BASE.NEAR * d.sight; BLACK = BASE.BLACK * d.black; }
+const fmtT = t => { const m = t / 60 | 0, sec = t - m * 60; return m + ':' + (sec < 10 ? '0' : '') + sec.toFixed(1); };
+function menuText() { const d = saved.difficulty, b = saved.best[d]; return DIFFS[d].desc + '\nBEST  ' + (b === null ? '--:--' : fmtT(b)); }
+const diffBtns = {};
+for (const k in DIFFS) { const b = document.createElement('button'); b.textContent = DIFFS[k].label; b.addEventListener('click', () => { saved.difficulty = k; persist(); renderMenu(true); }); diffE.appendChild(b); diffBtns[k] = b; }
+function renderMenu(selectable) {           // difficulty buttons only between runs (hidden while paused); best record always shown
+  for (const k in diffBtns) diffBtns[k].classList.toggle('sel', k === saved.difficulty);
+  diffE.classList.toggle('hide', !selectable); bestE.textContent = menuText();
+}
+renderMenu(true);                          // start screen: difficulty buttons + best record
+function recordWin() {                      // called once when you escape: saves a new best time, returns the overlay text
+  const d = runDiff, prev = saved.best[d], isBest = prev === null || time < prev;
+  if (isBest) { saved.best[d] = time; persist(); }
+  return `You made it out in ${fmtT(time)} (${DIFFS[d].label}).<br>` + (isBest ? 'NEW BEST!' : `Best ${fmtT(prev)} (+${fmtT(time - prev)})`);
+}
+
 function showOv(cls, title, sub, btn) {
-  ov.className = cls; T.textContent = title; Sx.innerHTML = sub; B.textContent = btn;
-  [hud, recE, promptE, slats, floorE, potionE, miniE, alertE, cueE, keyE, msgE].forEach(e => e.classList.add('hide')); ov.classList.remove('hide');
+  ov.className = cls; T.textContent = title; Sx.innerHTML = sub; B.textContent = btn; renderMenu(cls !== '');
+  [hud, recE, promptE, slats, floorE, potionE, miniE, alertE, omenE, cueE, keyE, msgE].forEach(e => e.classList.add('hide')); ov.classList.remove('hide');
 }
 function lock() { cv.requestPointerLock(); }
 function reset() {
+  runDiff = saved.difficulty; applyDifficulty(runDiff);
   let guard = 0; while (!pickStairs() && guard++ < 20);
   buildWorld();
   const s = center({ x: 1, z: 1 }); Object.assign(P, { x: s.x, z: s.z, y: 0, cy: 1.6, level: 0, yaw: 0, pitch: 0, stam: 1, phase: 0, mx: 0, mz: 0, mv: 0, hidden: false, cab: null, si: 0, sx: 0, sy: 0, vx: 0, vy: 0, tired: false, mvS: 0 });
@@ -793,19 +1403,29 @@ function reset() {
   const f0 = allCells.filter(c => c.L === 0 && c.x + c.z - 2 >= 14), a = f0[Math.random() * f0.length | 0];
   const l1 = allCells.filter(c => c.L === 1), b = l1[Math.random() * l1.length | 0];
   [a, b].forEach((c, i) => { const q = center(c); Object.assign(ghosts[i], { x: q.x, z: q.z, L: c.L, yaw: Math.random() * 6.28, state: 'wander', goal: null, pause: 1.5 + i * 1.5, lost: 0, last: null, path: 0, next: null, base: 0, ws: 0, wt: 0, cab: null }); setLook(ghosts[i]); });
-  blackOn = false; showBlack(false); blackG.wt = WAIT; blackG.next = null; blackG.hunt = null; anomalyT = 0; deathT = -1; deathBy = null; shakeX = shakeY = shakeZ = deathRoll = 0; blackLvl = 0; warnB = prevWarn = -1; cueT = glitchT = 0; alertE.classList.add('hide'); cueE.classList.add('hide'); bodyFloor = -1; hasKey = false; msgT = 0; keyE.classList.add('hide'); msgE.classList.add('hide');
-  t0 = performance.now(); time = 0; heartT = 0; heartLvl = 0; vision = 0; target = null; creakT = 0;
+  blackOn = false; showBlack(false); blackG.wt = WAIT; blackG.next = null; blackG.hunt = null; anomalyT = 0; omenT = 0; deathT = -1; deathBy = null; shakeX = shakeY = shakeZ = deathRoll = 0; blackLvl = 0; warnB = prevWarn = -1; cueT = glitchT = 0; alertE.classList.add('hide'); omenE.classList.add('hide'); cueE.classList.add('hide'); bodyFloor = -1; hasKey = false; msgT = 0; keyE.classList.add('hide'); msgE.classList.add('hide');
+  t0 = performance.now(); time = 0; heartT = 0; heartLvl = 0; vision = 0; target = null;
 }
 function begin() {
-  if (state !== 'pause') reset(); else t0 += performance.now() - pausedAt;      // paused time does not count toward the timer / 30-min limit / record
+  clearKeys();                             // never start a run with a stale pressed key
+  if (state !== 'pause') reset(); else t0 += performance.now() - pausedAt;      // paused time does not count toward the timer / record
   initAudio(); state = 'play'; ov.classList.add('hide'); hud.classList.remove('hide'); recE.classList.remove('hide'); floorE.classList.remove('hide'); miniE.classList.remove('hide'); keyE.classList.toggle('hide', !hasKey);
   if (P.hidden) slats.classList.remove('hide'); lock();
 }
 B.addEventListener('click', begin);
 addEventListener('keydown', e => { if (e.code === 'KeyR' && (state === 'over' || state === 'win')) begin(); });
-document.addEventListener('pointerlockchange', () => {
-  if (!document.pointerLockElement && state === 'play') { state = 'pause'; pausedAt = performance.now(); if (AC) { humG.gain.value = 0; crackG.gain.value = 0; droneG.gain.value = 0; } showOv('', 'PAUSED', 'Click to resume.', 'RESUME'); }
-});
+function clearKeys() { for (const k in keys) keys[k] = false; drag = false; }           // forget every held key / mouse button
+function pauseGame() {
+  if (state !== 'play') return;
+  state = 'pause'; pausedAt = performance.now(); clearKeys();
+  if (AC) { humG.gain.value = 0; crackG.gain.value = 0; droneG.gain.value = 0; }
+  if (document.pointerLockElement) document.exitPointerLock();
+  showOv('', 'PAUSED', 'Click to resume.', 'RESUME');
+}
+function onFocusLoss() { clearKeys(); pauseGame(); }        // alt-tab, clicking another window, hidden tab: no stuck movement / run, and the game pauses
+document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement) onFocusLoss(); });
+addEventListener('blur', onFocusLoss);
+document.addEventListener('visibilitychange', () => { if (document.hidden) onFocusLoss(); });
 
 // ================= [2 PLAYER] interaction =================
 function interact() {
@@ -868,7 +1488,7 @@ function pickGoal(g) {
 }
 function setLook(g) {
   const ch = g.state === 'chase', w = g.state === 'wait';
-  g.eyeMat.color.setHex(ch ? 0xff4630 : w ? 0xe02818 : 0xb01810); g.sheetMat.emissive.setHex(ch ? 0x8a2020 : 0x5a1a1a);
+  g.eyeMat.color.setHex(ch ? 0xff4630 : w ? 0xe02818 : 0xb01810); g.sheetMat.emissive.setHex(ch ? 0x5a1c1c : 0x2a0f10);
 }
 function startChase(g) {
   const others = ghosts.filter(o => o !== g && o.state === 'chase').length;
@@ -928,7 +1548,7 @@ function updateBlack(dt) {
     }
     const w = { x: c.wx, z: c.wz, L: c.L }, d = Math.hypot(w.x - g.x, w.z - g.z), wn = nodeAt(w.x, w.z, w.L), gn = nodeAt(g.x, g.z, g.L);
     if (d > .12) { if (nkey(gn) === nkey(wn)) moveGhost(g, w.x, w.z, BLACK, dt); else follow(g, wn, BLACK, dt); }
-    else { turn(g, Math.atan2(c.cx - g.x, c.cz - g.z), dt, 6); g.wt -= dt; if (g.wt <= 0) placeBlack(1); }   // stand there, then teleport far away
+    else { turn(g, Math.atan2(c.cx - g.x, c.cz - g.z), dt, 6); g.wt -= dt; if (g.wt <= 0) { if (c.knownUntil > time) omenT = OMEN_TIME; placeBlack(1); } }   // stand there, then teleport far away
   } else {
     g.wt = WAIT;
     const d = Math.hypot(P.x - g.x, P.z - g.z);
@@ -1095,6 +1715,19 @@ function loop(now) {
   render(dt, now);
 }
 const pad2 = n => String(n).padStart(2, '0');
+function drawMini() {                      // pixel-art radar: the square is the whole floor; the only thing drawn is your triangle (pointing where you look)
+  const n = W * MINI_T, d = miniImg.data, px = P.x / S * MINI_T, pz = P.z / S * MINI_T;
+  d.fill(0);
+  const ca = Math.cos(P.yaw), sa = Math.sin(P.yaw), inTri = (lx, ly, tip, half, bot) => ly >= -tip && ly <= bot && Math.abs(lx) <= half * (ly + tip) / (tip + bot);
+  for (let y = Math.floor(pz - 6); y <= Math.ceil(pz + 6); y++) for (let x = Math.floor(px - 6); x <= Math.ceil(px + 6); x++) {      // rasterised per pixel
+    if (x < 0 || y < 0 || x >= n || y >= n) continue;
+    const rx = x + .5 - px, rz = y + .5 - pz, lx = rx * ca - rz * sa, ly = rx * sa + rz * ca;   // pixel -> triangle frame (forward = -y)
+    const inner = inTri(lx, ly, 4.2, 3, 3), outer = inTri(lx, ly, 5.4, 4.2, 4);
+    if (!outer) continue;
+    const o = (y * n + x) * 4; d[o] = inner ? 242 : 8; d[o + 1] = inner ? 247 : 10; d[o + 2] = inner ? 238 : 9; d[o + 3] = 255;   // light triangle with a 1px dark outline
+  }
+  miniCtx.putImageData(miniImg, 0, 0);
+}
 function update(dt, now) {
   time = (now - t0) / 1000;
   if (P.hidden) {
@@ -1141,12 +1774,13 @@ function update(dt, now) {
   // anomaly cue at the moment the key is taken (the black ghost appears then): lamps stutter in unison and "ANOMALY DETECTED" flashes
   if (anomalyT > 0) { anomalyT -= dt; const q = ANOMALY_TIME - anomalyT; warnB = (Math.floor(q * (3 + 1.4 * q)) % 2 === 0 && Math.random() > .12) ? 1 : 0; } else warnB = -1;
   alertE.classList.toggle('hide', !(anomalyT > 0));
+  if (omenT > 0) omenT -= dt; omenE.classList.toggle('hide', !(omenT > 0));   // omen: shown after it teleports away from a cabinet it now remembers
   for (const c of cabs) { if (c.knownUntil && c.knownUntil <= time) c.knownUntil = 0; c.scratch.visible = c.knownUntil > time; }   // claw marks show while the black ghost remembers a cabinet
   if (warnB === 0 && prevWarn !== 0) for (const l of lamps) if (l.on) flickSound(l);
   prevWarn = warnB;
   if (msgT > 0) { msgT -= dt; if (msgT <= 0) msgE.classList.add('hide'); }
   if (cueT > 0) { cueT -= dt; if (cueT <= 0) cueE.classList.add('hide'); } glitchT = Math.max(0, glitchT - dt);
-  dotE.style.left = (P.x / (W * S) * 100) + '%'; dotE.style.top = (P.z / (W * S) * 100) + '%';   // minimap: just a dot, no map data
+  drawMini();
   ghosts.forEach(g => updateGhost(g, dt));
   updateBlack(dt);
   updateLamps(dt, now);
@@ -1173,54 +1807,77 @@ function update(dt, now) {
   if (killer && time > .5) { startDeath(killer); return; }
 }
 function end(kind) {
-  state = kind; shakeX = shakeY = shakeZ = 0; document.exitPointerLock(); if (AC) { humG.gain.value = 0; crackG.gain.value = 0; droneG.gain.value = 0; }
+  state = kind; clearKeys(); shakeX = shakeY = shakeZ = 0; document.exitPointerLock(); if (AC) { humG.gain.value = 0; crackG.gain.value = 0; droneG.gain.value = 0; }
   if (kind === 'over') showOv('over', 'GAME OVER', 'A ghost caught you.<br>The maze is rebuilt every run.', 'TRY AGAIN');
-  else showOv('win', 'YOU ESCAPED', `You made it out in ${time.toFixed(1)} seconds.`, 'PLAY AGAIN');
+  else showOv('win', 'YOU ESCAPED', recordWin(), 'PLAY AGAIN');
 }
-const cl = (v, m) => Math.max(-m, Math.min(m, v)), lerp = (a, b, t) => a + (b - a) * t;
+const cl = (v, m) => Math.max(-m, Math.min(m, v)), _tv = new THREE.Vector3();
 function render(dt, now) {
   const mv = (P.mvS += (P.mv - P.mvS) * (1 - Math.exp(-8 * dt))), run = P.running ? 1 : 0, rb = (P.rb += (run - P.rb) * Math.min(1, 6 * dt)), amp = mv * (1 + rb * .9), ph = P.phase;
-  const bobY = Math.cos(ph * 2) * .03 * amp, strafe = P.mx * Math.cos(P.yaw) - P.mz * Math.sin(P.yaw), roll = Math.sin(ph) * .012 * amp - strafe * .0025;
+  const h = Math.min(dt, .033), dY = cl(Math.atan2(Math.sin(P.yaw - P.pyaw), Math.cos(P.yaw - P.pyaw)), .15), dP = cl(P.pitch - P.ppitch, .15); P.pyaw = P.yaw; P.ppitch = P.pitch;
+  // head motion: the camera dips on every footfall (|sin| = 0 at each step sound), shifts weight from foot to foot, nods a little on impact,
+  // leans into turns and strafes, and breathes - faster and deeper when you are out of breath
+  const foot = Math.abs(Math.sin(ph)), bobY = (foot - .64) * (.05 + .035 * rb) * amp, sway = Math.sin(ph) * .017 * amp, nod = (foot - .64) * .012 * amp;
+  const strafe = P.mx * Math.cos(P.yaw) - P.mz * Math.sin(P.yaw); P.ss += (strafe - P.ss) * Math.min(1, 6 * dt);
+  P.tv += (dY / Math.max(dt, 1e-3) - P.tv) * Math.min(1, 5 * dt);
+  const puff = P.tired ? 1 : Math.max(0, Math.min(1, (.5 - P.stam) / .5)); P.br += dt * (1.5 + 2.6 * puff + rb * 1.2);
+  const breathY = Math.sin(P.br) * (.004 + .011 * puff), breathP = Math.sin(P.br - .6) * (.002 + .006 * puff);
+  const roll = Math.sin(ph) * .009 * amp - P.ss * .004 - cl(P.tv * .01, .035);
   P.cy += ((P.hidden ? P.cab.L * FH + 1.5 : P.y + 1.6) - P.cy) * Math.min(1, 16 * dt);
-  camera.position.set(P.x + shakeX, P.cy + bobY + shakeY, P.z + shakeZ); camera.rotation.set(P.pitch - rb * .015, P.yaw, roll + deathRoll);
+  camera.position.set(P.x + Math.cos(P.yaw) * sway + shakeX, P.cy + bobY + breathY + shakeY, P.z - Math.sin(P.yaw) * sway + shakeZ);
+  camera.rotation.set(P.pitch - rb * .02 + nod + breathP, P.yaw, roll + deathRoll);
   const fv = 75 + rb * 7; if (Math.abs(camera.fov - fv) > .05) { camera.fov += (fv - camera.fov) * Math.min(1, 5 * dt); camera.updateProjectionMatrix(); }
   body.position.set(P.x, P.y, P.z); body.rotation.y = P.by;
-  const sw = Math.sin(ph) * (.55 + run * .35) * mv; legs[0].rotation.x = sw; legs[1].rotation.x = -sw;
+  legs.forEach((l, i) => {                   // hip swing, knee bends while the leg swings through, foot kept roughly level
+    const p = ph + (i ? Math.PI : 0), lw = (.5 + run * .3) * mv;
+    l.hip.rotation.x = Math.sin(p) * lw; l.knee.rotation.x = -(.06 + Math.max(0, Math.cos(p)) * (.75 + run * .5)) * mv; l.ankle.rotation.x = -(l.hip.rotation.x + l.knee.rotation.x) * .8;
+  });
+  torso.rotation.set(-rb * .14 * mv, Math.sin(ph) * .07 * mv, 0);
 
-  // arms: relaxed low pose, spring lag on mouse look, small alternating swing (bigger when running)
-  const h = Math.min(dt, .033), dY = cl(P.yaw - P.pyaw, .15), dP = cl(P.pitch - P.ppitch, .15); P.pyaw = P.yaw; P.ppitch = P.pitch;
+  // arms: spring lag on mouse look; the torch hand stays fairly steady and only bobs, the free arm swings (and pumps into view when running)
   P.vy += (-60 * P.sy - 14 * P.vy) * h - dY * 3.5; P.vx += (-60 * P.sx - 14 * P.vx) * h - dP * 3.5;
   P.sy = cl(P.sy + P.vy * h, .08); P.sx = cl(P.sx + P.vx * h, .06);
-  const mvA = mv, ampA = amp;                // arms use the same smoothed movement value as the camera
-  rig.rotation.set(P.sx, P.sy, -roll * .6); rig.position.set(Math.sin(ph) * .012 * ampA, -bobY * .6 + Math.sin(now / 1200) * .004, rb * .015);
-  arms.forEach((a, i) => {
-    const sw2 = Math.sin(ph + (i ? 0 : Math.PI)), br = Math.sin(now / 1300 + i * 1.7) * .012;
-    const swing = mvA * (.12 + .26 * rb), flex = (sw2 * .5 + .5) * mvA * (.12 + .25 * rb);
-    a.sh.rotation.x = .7 + sw2 * swing + rb * .08 + br;
-    a.el.rotation.x = 1.0 + rb * .35 + flex - br;
-    a.hand.rotation.x = -.2 - sw2 * .05 * mvA;
-    a.sh.position.z = -.02 - sw2 * (.02 + .03 * rb) * mvA;
-  });
+  rig.rotation.set(P.sx - nod * .6 + breathP * 1.5, P.sy, -roll * .5); rig.position.set(-sway * .35, -bobY * .45 + breathY * 1.6, rb * .02);
+  const s1 = Math.sin(ph), swing = mv * (.1 + .32 * rb), lerp = (a, b, t) => a + (b - a) * t, R = POSE.R, Lp = POSE.L, Lr = POSE.Lrun, tr = Math.min(1, rb * 1.2);
+  armR.sh.rotation.set(R.a + s1 * swing * .25 - rb * .12 + breathP * 2, R.yaw + rb * .04, 0); armR.el.rotation.x = R.e + rb * .06 + (s1 * .5 + .5) * swing * .15;   // running: the torch drops a little and jolts
+  armR.hand.rotation.set(-Math.cos(ph * 2) * .02 * amp, 0, s1 * .03 * amp);
+  armL.sh.rotation.set(lerp(Lp.a, Lr.a, tr) - s1 * swing * .55, lerp(Lp.yaw, Lr.yaw, tr), 0); armL.el.rotation.x = lerp(Lp.e, Lr.e, tr) + (-s1 * .5 + .5) * swing * .25;
+  armL.hand.rotation.x = -.1 + s1 * .08 * mv;
+  // the torch beam comes from the lens in your hand (it lags and bobs with it); while hidden in a cabinet it falls back to the camera
+  if (rig.visible) { camera.updateMatrixWorld(true); flash.position.copy(camera.worldToLocal(torch.lens.getWorldPosition(_tv))); flT.position.copy(camera.worldToLocal(torch.aim.getWorldPosition(_tv))); }
+  else { flash.position.set(0, 0, 0); flT.position.set(0, 0, -1); }
 
   // ghosts
   allGhosts().forEach((g, k) => {
     const ch = g.state === 'chase', wt = g.state === 'wait';
     g.mesh.position.set(g.x, heightAt(g.x, g.z, g.L) + .36 + Math.sin(now / 400 + k * 2) * .07, g.z); g.mesh.rotation.y = g.yaw;   // hovers a bit higher so the hem never dips into the floor
-    if (g.fl !== g.L) { setFloor(g.mesh, g.L, true); g.shadow.layers.set(FL(g.L)); g.fl = g.L; }
-    g.xray.layers.set(FL(P.level)); g.marker.layers.set(FL(P.level));   // Ghost Sight overlay is always drawn in the final pass, so it shows through walls and floors of both levels
+    if (g.fl !== g.L) { setActorLayer(g.mesh, g.L); g.shadow.layers.set(FL(g.L)); g.fl = g.L; }   // the floor's lights already include GL(L); the x-ray twins stay on XL
     const li = (ch ? 4.2 : 2.2) + (Math.random() - .5) * (ch ? 1.2 : .6); g.lights[0].intensity = g.L === 0 ? li : 0; g.lights[1].intensity = g.L === 1 ? li : 0;   // light exists only on the ghost's own floor layer
     g.glow.scale.setScalar((ch ? 8 : 6) + Math.sin(now / 250 + k) * .4);
     g.eyeGlow.opacity = (ch ? 1 : wt ? .85 : .65) * (.88 + .12 * Math.sin(now / 120 + k * 2));
-    const es = ch ? 1.5 : wt ? 1.15 : .9; g.eyes.forEach(e => e.scale.set(es, es, 1));
+    const es = ch ? 1.5 : wt ? 1.15 : .9; g.eyes.forEach(e => e.scale.set(es * .16, es * .16, 1));   // tight pinpoint glows: still visible down a dark corridor, but they no longer wash out the face up close
+    g.head.rotation.x = .2 + Math.sin(now / 900 + k) * .04 + (ch ? .16 : 0); g.head.rotation.y = Math.sin(now / 2300 + k) * .12;                       // hunched head that sways ...
+    g.head.rotation.z = Math.sin(now / 1400 + k * 2) * .07 + (ch ? Math.sin(now / 65 + k) * .035 : 0);                                              // ... and twitches while hunting
+    const jSlot = Math.floor(now / 130), jHash = n => { const v = Math.sin(n * 127.1 + 311.7) * 43758.5453; return v - Math.floor(v); };
+    if (jHash(jSlot + k * 31.7) < (ch ? .1 : .035)) { const j = jHash(jSlot * 1.37 + k) - .5; g.head.rotation.z += j * .6; g.head.rotation.y += j * .45; g.head.rotation.x += Math.abs(j) * .25; }   // now and then the neck snaps to a broken angle for a split second
+    g.sleeves.forEach((sl, i) => { sl.rotation.z = (i ? 1 : -1) * (.42 + Math.sin(now / 800 + i * 2 + k) * .035); });                                    // sleeves sway a little
+    g.wisps.forEach((w, i) => { w.rotation.x = .2 + Math.sin(now / 520 + i * 1.7 + k) * .14; });                                                    // trailing cloth drifts
     const gy = heightAt(g.x, g.z, g.L); g.shadow.position.set(g.x, gy + .03, g.z); g.shadow.material.opacity = .8 - Math.min(.35, Math.max(0, g.mesh.position.y - gy - .3) * 1.2); g.shadow.visible = true;   // contact blob follows the ghost
-    g.xray.visible = g.marker.visible = vision > 0; if (vision > 0) { const pu = vision < 4 ? (Math.sin(now / 90) > 0 ? 1 : .3) : 1; g.marker.scale.setScalar((1.6 + Math.sin(now / 300 + k) * .25) * pu); g.xray.material.opacity = .32 + .13 * Math.sin(now / 250); }
+    const xv = vision > 0; g.marker.visible = xv; g.xray.forEach(x => x.visible = xv);
+    if (xv) { const pu = vision < 4 ? (Math.sin(now / 90) > 0 ? 1 : .3) : 1; g.marker.scale.setScalar((1.6 + Math.sin(now / 300 + k) * .25) * pu); const op = (.32 + .13 * Math.sin(now / 250)) * pu; for (const m in g.xrMats) g.xrMats[m].uniforms.op.value = op; }
   });
   chairs.forEach((c, k) => { if (!c.taken) c.glow.material.opacity = .4 + .15 * Math.sin(now / 500 + k); });
 
   postMat.uniforms.time.value = now / 1000; postMat.uniforms.hurt.value = hv(); postMat.uniforms.glitch.value = glitchT > 0 ? Math.min(1, glitchT / .45) : 0;
   syncPlayerFloor();
+  staticTex.offset.set(Math.random(), Math.random());                                   // TV static hiss
+  for (const f of flickers) { const k = Math.random() < .02 || Math.sin(now / 53 + f.ph) < -.985 ? .2 : .9 + .1 * Math.sin(now / 11 + f.ph); f.mat.color.setRGB(.74 * k, .83 * k, .91 * k); f.sp.material.opacity = .22 * k; }   // x-ray viewers buzz and drop out
   renderer.setRenderTarget(rt); renderer.clear(true, true, true);
-  for (const L of [1 - P.level, P.level]) { camera.layers.set(0); camera.layers.enable(FL(L)); renderer.render(scene, camera); }   // other floor first, current floor on top
+  const pass = (layer, L) => { camera.layers.set(layer); if (L !== undefined) camera.layers.enable(FL(L)); renderer.render(scene, camera); scene.autoUpdate = false; };   // matrices are updated once, in the first pass
+  for (const L of [1 - P.level, P.level]) pass(0, L);                                  // 1-2) walls / floors / props: other floor first, current floor on top
+  if (vision > 0) pass(XL);                                                              // 3) Ghost Sight: only the hidden parts of each ghost (depth test against the world alone)
+  for (const L of [1 - P.level, P.level]) pass(GL(L));                                   // 4-5) ghosts and the player's body, lit by their own floor's lights
+  scene.autoUpdate = true;
   camera.layers.set(0); camera.layers.enable(FL(0)); camera.layers.enable(FL(1));
   renderer.setRenderTarget(null); renderer.render(postScene, postCam);
 }
